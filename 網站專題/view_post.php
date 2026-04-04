@@ -81,15 +81,24 @@ try {
     <section class="comment-section">
         <h3>💬 留言討論</h3>
         
-        <?php
-        $c_sql = "SELECT comments.*, users.username FROM comments JOIN users ON comments.user_id = users.id WHERE post_id = ? ORDER BY created_at ASC";
+       <?php
+        // 修改點 2：SQL 加入 users.id (取名為 comment_user_id 避免衝突)
+        $c_sql = "SELECT comments.*, users.username, users.id AS comment_user_id 
+                  FROM comments 
+                  JOIN users ON comments.user_id = users.id 
+                  WHERE post_id = ? 
+                  ORDER BY created_at ASC";
         $c_stmt = $pdo->prepare($c_sql);
         $c_stmt->execute([$post_id]);
         $comments = $c_stmt->fetchAll();
 
         foreach ($comments as $c): ?>
             <div class="comment-item">
-                <span class="comment-user"><?= htmlspecialchars($c['username']) ?></span>
+                <span class="comment-user">
+                    <a href="profile.php?id=<?= $c['comment_user_id'] ?>" style="color: inherit; text-decoration: none;">
+                        <?= htmlspecialchars($c['username']) ?>
+                    </a>
+                </span>
                 <span class="comment-date"><?= $c['created_at'] ?></span>
                 <p style="margin: 5px 0 0;"><?= nl2br(htmlspecialchars($c['content'])) ?></p>
             </div>
@@ -109,3 +118,4 @@ try {
 
 </body>
 </html>
+

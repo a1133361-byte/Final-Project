@@ -3,6 +3,7 @@ session_start();
 require_once "includes/dbh.inc.php";
 
 try {
+    // 確保這裡抓到了 posts.user_id，這樣我們才能連到 profile.php
     $sql = "SELECT posts.*, users.username, categories.name AS cat_name 
             FROM posts 
             JOIN users ON posts.user_id = users.id 
@@ -55,11 +56,17 @@ try {
 
         .nav-links a:hover { opacity: 0.8; }
 
+        /* 特色按鈕 */
         .btn-post {
             background: #ff9f43;
             padding: 8px 15px;
             border-radius: 5px;
             font-weight: bold !important;
+        }
+
+        .user-link {
+            border-bottom: 1px dashed rgba(255,255,255,0.5);
+            padding-bottom: 2px;
         }
 
         /* 主內容區 */
@@ -83,8 +90,6 @@ try {
             margin-bottom: 20px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.05);
             transition: transform 0.2s, box-shadow 0.2s;
-            position: relative;
-            overflow: hidden;
         }
 
         .post-card:hover {
@@ -114,10 +119,21 @@ try {
             text-decoration: none;
         }
 
+        /* 文章資訊區 */
         .post-info {
             font-size: 0.85rem;
             color: #b2bec3;
             margin-bottom: 15px;
+        }
+
+        .author-link {
+            color: #764ba2;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .author-link:hover {
+            text-decoration: underline;
         }
 
         .post-content {
@@ -153,8 +169,11 @@ try {
         <div class="nav-links">
             <a href="index.php">首頁</a>
             <?php if (isset($_SESSION["user_id"])): ?>
+                <a href="profile.php?id=<?= $_SESSION['user_id'] ?>" class="user-link">
+                    👤 <?= htmlspecialchars($_SESSION["username"]) ?>
+                </a>
                 <a href="create_post.php" class="btn-post">我要發文</a>
-                <a href="logout.php">登出 (<?= htmlspecialchars($_SESSION["username"]) ?>)</a>
+                <a href="logout.php">登出</a>
             <?php else: ?>
                 <a href="login.php">登入</a>
                 <a href="regster.php">註冊</a>
@@ -182,7 +201,9 @@ try {
                         </a>
                     </h3>
                     <div class="post-info">
-                        👤 <?= htmlspecialchars($post['username']) ?> • 
+                        👤 <a href="profile.php?id=<?= $post['user_id'] ?>" class="author-link">
+                            <?= htmlspecialchars($post['username']) ?>
+                        </a> • 
                         📅 <?= date('Y-m-d', strtotime($post['created_at'])) ?>
                     </div>
                     <div class="post-content">
