@@ -22,6 +22,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             $_SESSION["username"] = $user["username"];
             $_SESSION["role"] = $user["role"];
 
+            $_SESSION["profile_img"] = $user["profile_img"];
             
             header("Location: ../index.php?login=success");
             exit();

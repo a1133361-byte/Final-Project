@@ -10,12 +10,13 @@ if (!isset($_GET["id"]) || empty($_GET["id"])) {
 $post_id = $_GET["id"];
 
 try {
-    $sql = "SELECT posts.*, users.username, categories.name AS cat_name 
-            FROM posts 
-            JOIN users ON posts.user_id = users.id 
-            JOIN categories ON posts.category_id = categories.id 
+    // 取得文章主體與作者資訊
+    $sql = "SELECT posts.*, users.username, users.profile_img, categories.name AS cat_name
+            FROM posts
+            JOIN users ON posts.user_id = users.id
+            JOIN categories ON posts.category_id = categories.id
             WHERE posts.id = ?";
-    
+
     $stmt = $pdo->prepare($sql);
     $stmt->execute([$post_id]);
     $post = $stmt->fetch();
@@ -23,70 +24,204 @@ try {
     if (!$post) {
         die("這篇文章不存在！");
     }
+
+    // 按讚統計
+    $like_sql = "SELECT COUNT(*) FROM likes WHERE post_id = ?";
+    $like_stmt = $pdo->prepare($like_sql);
+    $like_stmt->execute([$post_id]);
+    $like_count = $like_stmt->fetchColumn();
+
+    $user_liked = false;
+    if (isset($_SESSION['user_id'])) {
+        $check_like = "SELECT * FROM likes WHERE user_id = ? AND post_id = ?";
+        $check_stmt = $pdo->prepare($check_like);
+        $check_stmt->execute([$_SESSION['user_id'], $post_id]);
+        if ($check_stmt->rowCount() > 0) {
+            $user_liked = true;
+        }
+    }
 } catch (PDOException $e) {
     die("讀取失敗: " . $e->getMessage());
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= htmlspecialchars($post['title']) ?> - 論壇</title>
+    <title><?= htmlspecialchars($post['title']) ?> - PHP Forum</title>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background-color: #f4f7f6; margin: 0; line-height: 1.6; }
-        header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 1rem 2rem; }
-        header a { color: white; text-decoration: none; font-weight: bold; }
-        
-        .container { max-width: 800px; margin: 30px auto; padding: 0 20px; }
-        
+        :root {
+            --bg-color: #f4f7f6;
+            --card-bg: #ffffff;
+            --text-color: #333333;
+            --text-muted: #636e72;
+            --header-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --border-color: #dddddd;
+            --input-bg: #ffffff;
+            --tag-bg: #eef2ff;
+        }
+
+        [data-theme="dark"] {
+            --bg-color: #1a1a2e;
+            --card-bg: #16213e;
+            --text-color: #e9ecef;
+            --text-muted: #b2bec3;
+            --header-gradient: linear-gradient(135deg, #1f4068 0%, #16213e 100%);
+            --border-color: #444444;
+            --input-bg: #0f3460;
+            --tag-bg: #1f4068;
+        }
+
+        body {
+            font-family: 'Segoe UI', 'Microsoft JhengHei', sans-serif;
+            background-color: var(--bg-color);
+            margin: 0;
+            color: var(--text-color);
+            transition: background-color 0.3s, color 0.3s;
+            line-height: 1.6;
+        }
+
+        /* 導覽列 */
+        header {
+            background: var(--header-gradient);
+            color: white; padding: 0.8rem 2rem; display: flex;
+            justify-content: space-between; align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); position: sticky; top: 0; z-index: 1000;
+        }
+        header h1 { margin: 0; font-size: 1.5rem; }
+        header h1 a { color: white; text-decoration: none; }
+
+        .nav-links { display: flex; align-items: center; gap: 20px; }
+        .nav-links a { color: white; text-decoration: none; font-weight: 500; transition: 0.3s; }
+
+        .theme-toggle {
+            background: rgba(255, 255, 255, 0.2);
+            border: none; color: white; padding: 8px 12px; border-radius: 20px;
+            cursor: pointer; font-size: 14px;
+        }
+
+        .btn-post { background: #ff9f43; padding: 8px 18px; border-radius: 8px; font-weight: bold !important; }
+        .user-link { display: flex; align-items: center; gap: 10px; padding: 5px 15px; background: rgba(255, 255, 255, 0.1); border-radius: 50px; }
+        .nav-avatar-img { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; }
+
         /* 文章主體 */
-        .post-article { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-        .tag { background: #eef2ff; color: #667eea; padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: bold; }
-        h1 { font-size: 2rem; margin-top: 15px; color: #2d3436; }
-        .meta { font-size: 0.9rem; color: #b2bec3; margin-bottom: 30px; border-bottom: 1px solid #eee; padding-bottom: 15px; }
-        .content { font-size: 1.1rem; color: #444; white-space: pre-wrap; }
+        .container { max-width: 800px; margin: 30px auto; padding: 0 20px; }
+        .post-article {
+            background: var(--card-bg); padding: 40px; border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05); transition: background-color 0.3s;
+        }
+        .tag { background: var(--tag-bg); color: #667eea; padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: bold; display: inline-block; }
+        h1.post-title { font-size: 2.2rem; margin: 15px 0; color: var(--text-color); }
+
+        .post-author-box {
+            display: flex; align-items: center; gap: 12px; margin-bottom: 25px;
+            padding-bottom: 15px; border-bottom: 1px solid var(--border-color);
+        }
+        .author-avatar { width: 45px; height: 45px; border-radius: 50%; object-fit: cover; border: 2px solid var(--border-color); }
+        .meta-info { display: flex; flex-direction: column; font-size: 0.9rem; color: var(--text-muted); }
+        .author-name { font-weight: bold; color: #764ba2; text-decoration: none; }
+        .content { font-size: 1.1rem; color: var(--text-color); white-space: pre-wrap; margin-bottom: 30px; }
+
+        /* 按讚與管理 */
+        .like-section { margin-top: 30px; padding-top: 20px; border-top: 1px dashed var(--border-color); }
+        .post-management {
+            margin-top: 20px; padding: 15px; background: rgba(229, 62, 62, 0.05);
+            border-radius: 8px; border: 1px solid var(--border-color);
+        }
 
         /* 留言區 */
-        .comment-section { margin-top: 40px; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-        .comment-item { border-bottom: 1px solid #f1f1f1; padding: 15px 0; }
+        .comment-section {
+            margin-top: 40px; background: var(--card-bg); padding: 30px;
+            border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+        .comment-item { display: flex; gap: 15px; border-bottom: 1px solid var(--border-color); padding: 20px 0; }
         .comment-item:last-child { border: none; }
-        .comment-user { font-weight: bold; color: #764ba2; margin-right: 10px; }
-        .comment-date { font-size: 0.8rem; color: #ccc; }
-        
-        /* 留言表單 */
-        .comment-form textarea { width: 100%; padding: 15px; border: 1px solid #ddd; border-radius: 8px; margin-top: 10px; box-sizing: border-box; }
-        .btn-submit { background: #764ba2; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin-top: 10px; }
+        .comment-avatar { width: 35px; height: 35px; border-radius: 50%; object-fit: cover; }
+        .comment-user { font-weight: bold; color: #764ba2; text-decoration: none; }
+        .comment-date { font-size: 0.8rem; color: var(--text-muted); }
+
+        .comment-form textarea {
+            width: 100%; padding: 15px; border: 1px solid var(--border-color);
+            border-radius: 8px; background: var(--input-bg); color: var(--text-color);
+            margin-top: 10px; box-sizing: border-box; resize: vertical; outline: none;
+        }
+        .btn-submit { background: #764ba2; color: white; border: none; padding: 10px 25px; border-radius: 5px; cursor: pointer; margin-top: 10px; font-weight: bold; }
     </style>
 </head>
 <body>
 
 <header>
-    <div style="max-width: 800px; margin: auto; display: flex; justify-content: space-between;">
-        <a href="index.php">← 返回首頁</a>
+    <h1><a href="index.php">🚀 PHP Forum</a></h1>
+    <div class="nav-links">
+        <button class="theme-toggle" id="themeBtn">🌙 切換模式</button>
+        <a href="index.php">首頁</a>
+        <?php if (isset($_SESSION["user_id"])): ?>
+            <a href="create_post.php" class="btn-post">我要發文</a>
+            <a href="logout.php">登出</a>
+            <a href="profile.php?id=<?= $_SESSION['user_id'] ?>" class="user-link">
+                <?php
+                $nav_avatar = !empty($_SESSION['profile_img'])
+                    ? "uploads/users_profile_img/".$_SESSION['profile_img']
+                    : "uploads/default_avatar.png";
+                ?>
+                <img src="<?= $nav_avatar ?>" class="nav-avatar-img">
+                <span><?= htmlspecialchars($_SESSION["username"]) ?></span>
+            </a>
+        <?php else: ?>
+            <a href="login.php">登入</a>
+            <a href="regster.php">註冊</a>
+        <?php endif; ?>
     </div>
 </header>
 
 <div class="container">
     <article class="post-article">
         <span class="tag"><?= htmlspecialchars($post['cat_name']) ?></span>
-        <h1><?= htmlspecialchars($post['title']) ?></h1>
-        <div class="meta">
-            👤 作者：<?= htmlspecialchars($post['username']) ?> | 📅 時間：<?= $post['created_at'] ?>
+        <h1 class="post-title"><?= htmlspecialchars($post['title']) ?></h1>
+
+        <div class="post-author-box">
+            <?php $author_img = !empty($post['profile_img']) ? "uploads/users_profile_img/".$post['profile_img'] : "uploads/default_avatar.png"; ?>
+            <img src="<?= $author_img ?>" class="author-avatar">
+            <div class="meta-info">
+                <a href="profile.php?id=<?= $post['user_id'] ?>" class="author-name"><?= htmlspecialchars($post['username']) ?></a>
+                <span>發布於 <?= $post['created_at'] ?></span>
+            </div>
         </div>
+
         <div class="content"><?= nl2br(htmlspecialchars($post['content'])) ?></div>
+
+        <div class="like-section">
+            <?php if (isset($_SESSION['user_id'])): ?>
+                <div id="like-btn" style="cursor: pointer; display: inline-flex; align-items: center; gap: 8px; user-select: none;">
+                    <span id="like-icon" style="font-size: 1.5rem; transition: transform 0.2s;"><?= $user_liked ? '❤️' : '🤍' ?></span>
+                    <span id="like-count" style="color: #764ba2; font-weight: bold; font-size: 1.1rem;"><?= $like_count ?></span>
+                </div>
+            <?php else: ?>
+                <div style="font-size: 1.1rem; color: var(--text-muted);">
+                    🤍 <?= $like_count ?> <small>(登入後即可按讚)</small>
+                </div>
+            <?php endif; ?>
+        </div>
+
+        <?php if (isset($_SESSION['user_id']) && $_SESSION['user_id'] == $post['user_id']): ?>
+            <div class="post-management">
+                <span style="color: #e53e3e; font-weight: bold; margin-right: 15px;">🛠️ 管理：</span>
+                <a href="edit_post.php?id=<?= $post['id'] ?>" style="color: #2b6cb0; text-decoration: none; margin-right: 15px;">📝 編輯內容</a>
+                <a href="includes/delete_post.inc.php?id=<?= $post['id'] ?>"
+                   onclick="return confirm('確定要永久刪除這篇文章嗎？')"
+                   style="color: #e53e3e; text-decoration: none;">🗑️ 刪除文章</a>
+            </div>
+        <?php endif; ?>
     </article>
 
     <section class="comment-section">
         <h3>💬 留言討論</h3>
-        
-       <?php
-        // 修改點 2：SQL 加入 users.id (取名為 comment_user_id 避免衝突)
-        $c_sql = "SELECT comments.*, users.username, users.id AS comment_user_id 
-                  FROM comments 
-                  JOIN users ON comments.user_id = users.id 
-                  WHERE post_id = ? 
+        <?php
+        $c_sql = "SELECT comments.*, users.username, users.id AS comment_user_id, users.profile_img AS comment_avatar
+                  FROM comments
+                  JOIN users ON comments.user_id = users.id
+                  WHERE post_id = ?
                   ORDER BY created_at ASC";
         $c_stmt = $pdo->prepare($c_sql);
         $c_stmt->execute([$post_id]);
@@ -94,18 +229,20 @@ try {
 
         foreach ($comments as $c): ?>
             <div class="comment-item">
-                <span class="comment-user">
-                    <a href="profile.php?id=<?= $c['comment_user_id'] ?>" style="color: inherit; text-decoration: none;">
-                        <?= htmlspecialchars($c['username']) ?>
-                    </a>
-                </span>
-                <span class="comment-date"><?= $c['created_at'] ?></span>
-                <p style="margin: 5px 0 0;"><?= nl2br(htmlspecialchars($c['content'])) ?></p>
+                <?php $c_img = !empty($c['comment_avatar']) ? "uploads/users_profile_img/".$c['comment_avatar'] : "uploads/default_avatar.png"; ?>
+                <img src="<?= $c_img ?>" class="comment-avatar">
+                <div class="comment-body">
+                    <div class="comment-header">
+                        <a href="profile.php?id=<?= $c['comment_user_id'] ?>" class="comment-user"><?= htmlspecialchars($c['username']) ?></a>
+                        <span class="comment-date"><?= $c['created_at'] ?></span>
+                    </div>
+                    <p style="margin: 0; color: var(--text-color);"><?= nl2br(htmlspecialchars($c['content'])) ?></p>
+                </div>
             </div>
         <?php endforeach; ?>
 
         <?php if (isset($_SESSION["user_id"])): ?>
-            <div class="comment-form" style="margin-top: 30px;">
+            <div class="comment-form">
                 <form action="includes/comment.inc.php" method="POST">
                     <input type="hidden" name="post_id" value="<?= $post_id ?>">
                     <textarea name="content" rows="3" placeholder="我也想說幾句話..." required></textarea>
@@ -116,6 +253,47 @@ try {
     </section>
 </div>
 
+<script>
+    // 深色模式邏輯
+    const themeBtn = document.getElementById('themeBtn');
+    const currentTheme = localStorage.getItem('theme');
+
+    if (currentTheme === 'dark') {
+        document.body.setAttribute('data-theme', 'dark');
+        themeBtn.textContent = '☀️ 淺色模式';
+    }
+
+    themeBtn.addEventListener('click', () => {
+        let theme = 'light';
+        if (document.body.getAttribute('data-theme') !== 'dark') {
+            document.body.setAttribute('data-theme', 'dark');
+            theme = 'dark';
+            themeBtn.textContent = '☀️ 淺色模式';
+        } else {
+            document.body.removeAttribute('data-theme');
+            themeBtn.textContent = '🌙 深色模式';
+        }
+        localStorage.setItem('theme', theme);
+    });
+
+    // 按讚 AJAX
+    document.getElementById('like-btn')?.addEventListener('click', function() {
+        const postId = <?= $post_id ?>;
+        const likeIcon = document.getElementById('like-icon');
+        const likeCount = document.getElementById('like-count');
+
+        fetch('includes/like_ajax.inc.php?post_id=' + postId)
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    likeIcon.innerText = data.is_liked ? '❤️' : '🤍';
+                    likeCount.innerText = data.new_count;
+                    likeIcon.style.transform = 'scale(1.4)';
+                    setTimeout(() => { likeIcon.style.transform = 'scale(1)'; }, 200);
+                }
+            })
+            .catch(error => console.error('Error:', error));
+    });
+</script>
 </body>
 </html>
-
