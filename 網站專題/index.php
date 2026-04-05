@@ -91,7 +91,13 @@
             justify-content: space-between; align-items: center; 
             box-shadow: 0 2px 10px rgba(0,0,0,0.1); position: sticky; top: 0; z-index: 1000; 
         }
-        header h1 { margin: 0; font-size: 1.5rem; }
+        header a{
+            text-decoration: none;
+            color: white;
+        }
+        header a h1 { 
+            margin: 0; font-size: 1.5rem; 
+        }
 
         .nav-links { display: flex; align-items: center; gap: 20px; }
         .nav-links a { color: white; text-decoration: none; font-weight: 500; transition: 0.3s; }
@@ -150,7 +156,7 @@
 <body>
 
     <header>
-        <h1>🚀 PHP Forum</h1>
+        <a href="index.php"><h1>🚀 PHP Forum</h1></a>
         <div class="nav-links">
             <button class="theme-toggle" id="themeBtn">🌙 切換模式</button>
             
