@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- 主機： 127.0.0.1
--- 產生時間： 2026-04-05 11:54:14
+-- 產生時間： 2026-04-06 07:32:26
 -- 伺服器版本： 10.4.32-MariaDB
 -- PHP 版本： 8.2.12
 
@@ -77,6 +77,28 @@ INSERT INTO `comments` (`id`, `post_id`, `user_id`, `content`, `created_at`, `pa
 -- --------------------------------------------------------
 
 --
+-- 資料表結構 `friends`
+--
+
+CREATE TABLE `friends` (
+  `id` int(11) NOT NULL,
+  `user_id` int(11) NOT NULL,
+  `friend_id` int(11) NOT NULL,
+  `status` enum('pending','accepted') DEFAULT 'pending',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- 傾印資料表的資料 `friends`
+--
+
+INSERT INTO `friends` (`id`, `user_id`, `friend_id`, `status`, `created_at`) VALUES
+(3, 1, 3, 'accepted', '2026-04-06 05:29:15'),
+(4, 3, 1, 'accepted', '2026-04-06 05:29:59');
+
+-- --------------------------------------------------------
+
+--
 -- 資料表結構 `likes`
 --
 
@@ -95,6 +117,30 @@ INSERT INTO `likes` (`id`, `user_id`, `post_id`, `created_at`) VALUES
 (27, 3, 1, '2026-04-05 04:51:26'),
 (31, 3, 3, '2026-04-05 08:55:01'),
 (32, 1, 4, '2026-04-05 09:21:01');
+
+-- --------------------------------------------------------
+
+--
+-- 資料表結構 `messages`
+--
+
+CREATE TABLE `messages` (
+  `id` int(11) NOT NULL,
+  `sender_id` int(11) NOT NULL,
+  `receiver_id` int(11) NOT NULL,
+  `message` text NOT NULL,
+  `is_read` tinyint(1) DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- 傾印資料表的資料 `messages`
+--
+
+INSERT INTO `messages` (`id`, `sender_id`, `receiver_id`, `message`, `is_read`, `created_at`) VALUES
+(1, 3, 1, '你好', 1, '2026-04-06 05:30:12'),
+(2, 3, 1, '找我有甚麼事情???', 1, '2026-04-06 05:30:23'),
+(3, 1, 3, '抱歉，我加錯人好友了', 0, '2026-04-06 05:31:12');
 
 -- --------------------------------------------------------
 
@@ -166,12 +212,28 @@ ALTER TABLE `comments`
   ADD KEY `fk_parent_comment` (`parent_id`);
 
 --
+-- 資料表索引 `friends`
+--
+ALTER TABLE `friends`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `unique_friendship` (`user_id`,`friend_id`),
+  ADD KEY `friend_id` (`friend_id`);
+
+--
 -- 資料表索引 `likes`
 --
 ALTER TABLE `likes`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `user_post_like` (`user_id`,`post_id`),
   ADD KEY `post_id` (`post_id`);
+
+--
+-- 資料表索引 `messages`
+--
+ALTER TABLE `messages`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `sender_id` (`sender_id`),
+  ADD KEY `receiver_id` (`receiver_id`);
 
 --
 -- 資料表索引 `posts`
@@ -205,10 +267,22 @@ ALTER TABLE `comments`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
 
 --
+-- 使用資料表自動遞增(AUTO_INCREMENT) `friends`
+--
+ALTER TABLE `friends`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+
+--
 -- 使用資料表自動遞增(AUTO_INCREMENT) `likes`
 --
 ALTER TABLE `likes`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=33;
+
+--
+-- 使用資料表自動遞增(AUTO_INCREMENT) `messages`
+--
+ALTER TABLE `messages`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- 使用資料表自動遞增(AUTO_INCREMENT) `posts`
@@ -233,11 +307,25 @@ ALTER TABLE `comments`
   ADD CONSTRAINT `fk_parent_comment` FOREIGN KEY (`parent_id`) REFERENCES `comments` (`id`) ON DELETE CASCADE;
 
 --
+-- 資料表的限制式 `friends`
+--
+ALTER TABLE `friends`
+  ADD CONSTRAINT `friends_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `friends_ibfk_2` FOREIGN KEY (`friend_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
+
+--
 -- 資料表的限制式 `likes`
 --
 ALTER TABLE `likes`
   ADD CONSTRAINT `likes_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
   ADD CONSTRAINT `likes_ibfk_2` FOREIGN KEY (`post_id`) REFERENCES `posts` (`id`) ON DELETE CASCADE;
+
+--
+-- 資料表的限制式 `messages`
+--
+ALTER TABLE `messages`
+  ADD CONSTRAINT `messages_ibfk_1` FOREIGN KEY (`sender_id`) REFERENCES `users` (`id`),
+  ADD CONSTRAINT `messages_ibfk_2` FOREIGN KEY (`receiver_id`) REFERENCES `users` (`id`);
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
