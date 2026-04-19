@@ -10,7 +10,7 @@ if (!isset($_GET["id"]) || empty($_GET["id"])) {
 $post_id = $_GET["id"];
 
 try {
-    // 取得文章主體與作者資訊
+    // 1. 取得文章主體與作者資訊
     $sql = "SELECT posts.*, users.username, users.profile_img, categories.name AS cat_name
             FROM posts
             JOIN users ON posts.user_id = users.id
@@ -25,7 +25,13 @@ try {
         die("這篇文章不存在！");
     }
 
-    // 按讚統計
+    // --- 【取得該文章的所有圖片】 ---
+    $img_sql = "SELECT image_path FROM post_images WHERE post_id = ? ORDER BY id ASC";
+    $img_stmt = $pdo->prepare($img_sql);
+    $img_stmt->execute([$post_id]);
+    $post_images = $img_stmt->fetchAll(PDO::FETCH_COLUMN);
+
+    // 2. 按讚統計
     $like_sql = "SELECT COUNT(*) FROM likes WHERE post_id = ?";
     $like_stmt = $pdo->prepare($like_sql);
     $like_stmt->execute([$post_id]);
@@ -42,6 +48,30 @@ try {
     }
 } catch (PDOException $e) {
     die("讀取失敗: " . $e->getMessage());
+}
+
+// --- 【核心功能：處理標籤替換邏輯】 ---
+function renderPostContent($content, $images) {
+    // 1. 移除字串前後多餘的空白/換行（這是解決第一行縮排的關鍵）
+    $content = trim($content);
+    
+    // 2. 進行 HTML 轉義
+    $safe_content = htmlspecialchars($content);
+    
+    // 3. 替換圖片標籤
+    $rendered = preg_replace_callback('/\[img(\d+)\]/i', function($matches) use ($images) {
+        $index = intval($matches[1]) - 1;
+        
+        if (isset($images[$index])) {
+            $url = "uploads/post_imgs/" . $images[$index];
+            // 這裡使用 </div>...<div> 結構，確保圖片獨立於文字段落
+            return '</div><div class="content-image-wrapper"><img src="'.$url.'" class="post-inline-img"></div><div class="content-text">';
+        }
+        return ''; 
+    }, $safe_content);
+
+    // 4. 最後包裝成一個初始段落，並將換行轉換為 <br>
+    return '<div class="content-text">' . nl2br($rendered) . '</div>';
 }
 ?>
 <!DOCTYPE html>
@@ -82,7 +112,6 @@ try {
             line-height: 1.6;
         }
 
-        /* 導覽列 */
         header {
             background: var(--header-gradient);
             color: white; padding: 0.8rem 2rem; display: flex;
@@ -91,21 +120,13 @@ try {
         }
         header h1 { margin: 0; font-size: 1.5rem; }
         header h1 a { color: white; text-decoration: none; }
-
         .nav-links { display: flex; align-items: center; gap: 20px; }
-        .nav-links a { color: white; text-decoration: none; font-weight: 500; transition: 0.3s; }
-
-        .theme-toggle {
-            background: rgba(255, 255, 255, 0.2);
-            border: none; color: white; padding: 8px 12px; border-radius: 20px;
-            cursor: pointer; font-size: 14px;
-        }
-
+        .nav-links a { color: white; text-decoration: none; font-weight: 500; }
+        .theme-toggle { background: rgba(255, 255, 255, 0.2); border: none; color: white; padding: 8px 12px; border-radius: 20px; cursor: pointer; }
         .btn-post { background: #ff9f43; padding: 8px 18px; border-radius: 8px; font-weight: bold !important; }
         .user-link { display: flex; align-items: center; gap: 10px; padding: 5px 15px; background: rgba(255, 255, 255, 0.1); border-radius: 50px; }
         .nav-avatar-img { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; }
 
-        /* 文章主體 */
         .container { max-width: 800px; margin: 30px auto; padding: 0 20px; }
         .post-article {
             background: var(--card-bg); padding: 40px; border-radius: 12px;
@@ -121,31 +142,39 @@ try {
         .author-avatar { width: 45px; height: 45px; border-radius: 50%; object-fit: cover; border: 2px solid var(--border-color); }
         .meta-info { display: flex; flex-direction: column; font-size: 0.9rem; color: var(--text-muted); }
         .author-name { font-weight: bold; color: #764ba2; text-decoration: none; }
-        .content { font-size: 1.1rem; color: var(--text-color); white-space: pre-wrap; margin-bottom: 30px; }
 
-        /* 按讚與管理 */
+        /* --- 內容樣式 --- */
+        .post-content-body { margin-top: 20px; }
+        /* 使用 white-space: normal 配合 nl2br，可以徹底避免第一行意外縮排 */
+        .content-text { 
+            font-size: 1.1rem; 
+            color: var(--text-color); 
+            white-space: normal; 
+            word-break: break-all;
+            margin: 0;
+            padding: 0;
+            text-indent: 0; /* 確保沒有首行縮排 */
+        }
+        .content-image-wrapper { margin: 30px 0; text-align: center; }
+        .post-inline-img { 
+            max-width: 100%; 
+            max-height: 600px;
+            border-radius: 8px; 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
         .like-section { margin-top: 30px; padding-top: 20px; border-top: 1px dashed var(--border-color); }
         .post-management {
             margin-top: 20px; padding: 15px; background: rgba(229, 62, 62, 0.05);
             border-radius: 8px; border: 1px solid var(--border-color);
         }
 
-        /* 留言區 */
-        .comment-section {
-            margin-top: 40px; background: var(--card-bg); padding: 30px;
-            border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        }
+        .comment-section { margin-top: 40px; background: var(--card-bg); padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
         .comment-item { display: flex; gap: 15px; border-bottom: 1px solid var(--border-color); padding: 20px 0; }
-        .comment-item:last-child { border: none; }
         .comment-avatar { width: 35px; height: 35px; border-radius: 50%; object-fit: cover; }
         .comment-user { font-weight: bold; color: #764ba2; text-decoration: none; }
         .comment-date { font-size: 0.8rem; color: var(--text-muted); }
-
-        .comment-form textarea {
-            width: 100%; padding: 15px; border: 1px solid var(--border-color);
-            border-radius: 8px; background: var(--input-bg); color: var(--text-color);
-            margin-top: 10px; box-sizing: border-box; resize: vertical; outline: none;
-        }
+        .comment-form textarea { width: 100%; padding: 15px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--input-bg); color: var(--text-color); margin-top: 10px; box-sizing: border-box; resize: vertical; outline: none; }
         .btn-submit { background: #764ba2; color: white; border: none; padding: 10px 25px; border-radius: 5px; cursor: pointer; margin-top: 10px; font-weight: bold; }
     </style>
 </head>
@@ -160,11 +189,7 @@ try {
             <a href="create_post.php" class="btn-post">我要發文</a>
             <a href="logout.php">登出</a>
             <a href="profile.php?id=<?= $_SESSION['user_id'] ?>" class="user-link">
-                <?php
-                $nav_avatar = !empty($_SESSION['profile_img'])
-                    ? "uploads/users_profile_img/".$_SESSION['profile_img']
-                    : "uploads/default_avatar.png";
-                ?>
+                <?php $nav_avatar = !empty($_SESSION['profile_img']) ? "uploads/users_profile_img/".$_SESSION['profile_img'] : "uploads/default_avatar.png"; ?>
                 <img src="<?= $nav_avatar ?>" class="nav-avatar-img">
                 <span><?= htmlspecialchars($_SESSION["username"]) ?></span>
             </a>
@@ -189,7 +214,10 @@ try {
             </div>
         </div>
 
-        <div class="content"><?= nl2br(htmlspecialchars($post['content'])) ?></div>
+        <div class="post-content-body">
+            <!-- 呼叫 renderPostContent 並直接輸出，裡面的 trim() 會清掉換行造成的縮排 -->
+            <?= renderPostContent($post['content'], $post_images) ?>
+        </div>
 
         <div class="like-section">
             <?php if (isset($_SESSION['user_id'])): ?>
@@ -208,14 +236,13 @@ try {
             <div class="post-management">
                 <span style="color: #e53e3e; font-weight: bold; margin-right: 15px;">🛠️ 管理：</span>
                 <a href="edit_post.php?id=<?= $post['id'] ?>" style="color: #2b6cb0; text-decoration: none; margin-right: 15px;">📝 編輯內容</a>
-                <a href="includes/delete_post.inc.php?id=<?= $post['id'] ?>"
-                   onclick="return confirm('確定要永久刪除這篇文章嗎？')"
-                   style="color: #e53e3e; text-decoration: none;">🗑️ 刪除文章</a>
+                <a href="includes/delete_post.inc.php?id=<?= $post['id'] ?>" onclick="return confirm('確定要永久刪除這篇文章嗎？')" style="color: #e53e3e; text-decoration: none;">🗑️ 刪除文章</a>
             </div>
         <?php endif; ?>
     </article>
 
     <section class="comment-section">
+        <!-- 留言部分保持不變 -->
         <h3>💬 留言討論</h3>
         <?php
         $c_sql = "SELECT comments.*, users.username, users.id AS comment_user_id, users.profile_img AS comment_avatar
@@ -254,15 +281,11 @@ try {
 </div>
 
 <script>
-    // 深色模式邏輯
     const themeBtn = document.getElementById('themeBtn');
-    const currentTheme = localStorage.getItem('theme');
-
-    if (currentTheme === 'dark') {
+    if (localStorage.getItem('theme') === 'dark') {
         document.body.setAttribute('data-theme', 'dark');
         themeBtn.textContent = '☀️ 淺色模式';
     }
-
     themeBtn.addEventListener('click', () => {
         let theme = 'light';
         if (document.body.getAttribute('data-theme') !== 'dark') {
@@ -276,23 +299,16 @@ try {
         localStorage.setItem('theme', theme);
     });
 
-    // 按讚 AJAX
     document.getElementById('like-btn')?.addEventListener('click', function() {
         const postId = <?= $post_id ?>;
-        const likeIcon = document.getElementById('like-icon');
-        const likeCount = document.getElementById('like-count');
-
         fetch('includes/like_ajax.inc.php?post_id=' + postId)
             .then(response => response.json())
             .then(data => {
                 if (data.status === 'success') {
-                    likeIcon.innerText = data.is_liked ? '❤️' : '🤍';
-                    likeCount.innerText = data.new_count;
-                    likeIcon.style.transform = 'scale(1.4)';
-                    setTimeout(() => { likeIcon.style.transform = 'scale(1)'; }, 200);
+                    document.getElementById('like-icon').innerText = data.is_liked ? '❤️' : '🤍';
+                    document.getElementById('like-count').innerText = data.new_count;
                 }
-            })
-            .catch(error => console.error('Error:', error));
+            });
     });
 </script>
 </body>

@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- 主機： 127.0.0.1
--- 產生時間： 2026-04-06 07:32:26
+-- 產生時間： 2026-04-19 08:43:17
 -- 伺服器版本： 10.4.32-MariaDB
 -- PHP 版本： 8.2.12
 
@@ -72,7 +72,8 @@ INSERT INTO `comments` (`id`, `post_id`, `user_id`, `content`, `created_at`, `pa
 (7, 4, 3, '左下角有產品logo，你按下去之後會看到關機的按鈕', '2026-04-05 17:25:21', NULL),
 (8, 4, 3, 'test', '2026-04-05 17:26:53', NULL),
 (9, 4, 3, 'aaa', '2026-04-05 17:27:36', NULL),
-(10, 4, 3, '回覆功能好難做= =', '2026-04-05 17:32:15', NULL);
+(10, 4, 3, '回覆功能好難做= =', '2026-04-05 17:32:15', NULL),
+(11, 5, 3, '第二題答案是B喔', '2026-04-19 14:24:19', NULL);
 
 -- --------------------------------------------------------
 
@@ -94,7 +95,11 @@ CREATE TABLE `friends` (
 
 INSERT INTO `friends` (`id`, `user_id`, `friend_id`, `status`, `created_at`) VALUES
 (3, 1, 3, 'accepted', '2026-04-06 05:29:15'),
-(4, 3, 1, 'accepted', '2026-04-06 05:29:59');
+(4, 3, 1, 'accepted', '2026-04-06 05:29:59'),
+(5, 4, 1, 'accepted', '2026-04-19 06:31:42'),
+(6, 4, 3, 'accepted', '2026-04-19 06:31:46'),
+(7, 1, 4, 'accepted', '2026-04-19 06:32:03'),
+(8, 3, 4, 'accepted', '2026-04-19 06:32:37');
 
 -- --------------------------------------------------------
 
@@ -140,7 +145,9 @@ CREATE TABLE `messages` (
 INSERT INTO `messages` (`id`, `sender_id`, `receiver_id`, `message`, `is_read`, `created_at`) VALUES
 (1, 3, 1, '你好', 1, '2026-04-06 05:30:12'),
 (2, 3, 1, '找我有甚麼事情???', 1, '2026-04-06 05:30:23'),
-(3, 1, 3, '抱歉，我加錯人好友了', 0, '2026-04-06 05:31:12');
+(3, 1, 3, '抱歉，我加錯人好友了', 1, '2026-04-06 05:31:12'),
+(4, 3, 4, '安安', 1, '2026-04-19 06:37:23'),
+(5, 4, 3, '你好我是皮克敏', 0, '2026-04-19 06:37:59');
 
 -- --------------------------------------------------------
 
@@ -154,17 +161,39 @@ CREATE TABLE `posts` (
   `content` text NOT NULL,
   `user_id` int(11) NOT NULL,
   `category_id` int(11) NOT NULL,
-  `created_at` datetime NOT NULL DEFAULT current_timestamp()
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `post_img` varchar(255) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
 -- 傾印資料表的資料 `posts`
 --
 
-INSERT INTO `posts` (`id`, `title`, `content`, `user_id`, `category_id`, `created_at`) VALUES
-(1, '八方雲集吃12顆鍋貼太多了嗎？', '如題，今天去買八方雲集。我女朋友吃8顆，我吃12顆。她就很認真的念我說12顆太多了！我覺得好無辜，我今天可是想吃15顆但忍下來了，沒想到還是被念...', 1, 3, '2026-04-03 10:47:12'),
-(3, '#徵友 徵人打遊戲', '我是I人 之前也很忙沒時間打遊戲\r\n也徵人很多次了 但大家都不是活人 都在潛水…\r\n希望不管是I人還是E人都能踴躍一點加入\r\n我玩的是猛獸 迷媚 REPO  蓋瑞模組 致命公司\r\novercooked（幾代忘了）幻獸帕魯 高爾夫球\r\n還有想買的多人遊戲 可以一起討論～～\r\n遊玩時間 我目前都可以\r\n但之後可能都要晚上10.30以後\r\n歡迎私訊我 有加過我的潛水的先不用了 謝謝🥲', 3, 4, '2026-04-05 15:11:03'),
-(4, '有人可以教我怎麼關機嗎?', '我第一次使用電腦，現在我不知道要按什麼才關機', 1, 2, '2026-04-05 17:10:22');
+INSERT INTO `posts` (`id`, `title`, `content`, `user_id`, `category_id`, `created_at`, `post_img`) VALUES
+(1, '八方雲集吃12顆鍋貼太多了嗎？', '如題，今天去買八方雲集。我女朋友吃8顆，我吃12顆。她就很認真的念我說12顆太多了！我覺得好無辜，我今天可是想吃15顆但忍下來了，沒想到還是被念...', 1, 3, '2026-04-03 10:47:12', NULL),
+(3, '#徵友 徵人打遊戲', '我是I人 之前也很忙沒時間打遊戲\r\n也徵人很多次了 但大家都不是活人 都在潛水…\r\n希望不管是I人還是E人都能踴躍一點加入\r\n我玩的是猛獸 迷媚 REPO  蓋瑞模組 致命公司\r\novercooked（幾代忘了）幻獸帕魯 高爾夫球\r\n還有想買的多人遊戲 可以一起討論～～\r\n遊玩時間 我目前都可以\r\n但之後可能都要晚上10.30以後\r\n歡迎私訊我 有加過我的潛水的先不用了 謝謝🥲', 3, 4, '2026-04-05 15:11:03', NULL),
+(4, '有人可以教我怎麼關機嗎?', '我第一次使用電腦，現在我不知道要按什麼才關機', 1, 2, '2026-04-05 17:10:22', NULL),
+(5, '這題法律怎麼寫???', '第一張投影片\r\n[img1]\r\n第二章投影片\r\n[img2]\r\n請各位大大教我!!!\r\n[img3]\r\n', 1, 2, '2026-04-19 14:06:08', NULL);
+
+-- --------------------------------------------------------
+
+--
+-- 資料表結構 `post_images`
+--
+
+CREATE TABLE `post_images` (
+  `id` int(11) NOT NULL,
+  `post_id` int(11) NOT NULL,
+  `image_path` varchar(255) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- 傾印資料表的資料 `post_images`
+--
+
+INSERT INTO `post_images` (`id`, `post_id`, `image_path`) VALUES
+(1, 5, '69e470d0d765a3.44985178_1.jpg'),
+(2, 5, '69e470d0d7eb92.26436214_2.jpg');
 
 -- --------------------------------------------------------
 
@@ -189,7 +218,8 @@ CREATE TABLE `users` (
 
 INSERT INTO `users` (`id`, `username`, `password`, `role`, `email`, `created_at`, `bio`, `profile_img`) VALUES
 (1, 'hotdog', '$2y$10$HWl.ASd.sOwQqHECMoZI7uk4SI0THwWRF9O48r1G6jaeDnAPabHji', 0, 'a0903291833@gmail.com', '2026-04-02 20:36:06', '喜愛小動物和運動', 'avatar_1_69d218dec8c460.27607006.jpg'),
-(3, 'cookieCat', '$2y$10$2hw6yTyFEv3dilv8UJRMS.XujyJ5y35GAuDcnUwjIh00rngA9nE8O', 0, 'a1133361@mail.nuk.edu.tw', '2026-04-03 16:23:23', '我絕對不會神機錯亂!!!我是會站上夜城頂端的男人!!!', 'avatar_3_69d21a720ba343.42845887.jpg');
+(3, 'cookieCat', '$2y$10$2hw6yTyFEv3dilv8UJRMS.XujyJ5y35GAuDcnUwjIh00rngA9nE8O', 0, 'a1133361@mail.nuk.edu.tw', '2026-04-03 16:23:23', '我絕對不會神機錯亂!!!我是會站上夜城頂端的男人!!!', 'avatar_3_69d21a720ba343.42845887.jpg'),
+(4, 'Python', '$2y$10$xN3HYWlwY.SsP4ZSn54YC.Nivw2NGN3LUo6F.dtB6ypZsoUg6v8E.', 0, 'aaa0903291833@gmail.com', '2026-04-19 14:25:59', '', 'avatar_4_69e475b8402588.22933674.jpg');
 
 --
 -- 已傾印資料表的索引
@@ -244,6 +274,13 @@ ALTER TABLE `posts`
   ADD KEY `category_id` (`category_id`);
 
 --
+-- 資料表索引 `post_images`
+--
+ALTER TABLE `post_images`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `post_id` (`post_id`);
+
+--
 -- 資料表索引 `users`
 --
 ALTER TABLE `users`
@@ -264,13 +301,13 @@ ALTER TABLE `categories`
 -- 使用資料表自動遞增(AUTO_INCREMENT) `comments`
 --
 ALTER TABLE `comments`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
 
 --
 -- 使用資料表自動遞增(AUTO_INCREMENT) `friends`
 --
 ALTER TABLE `friends`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
 
 --
 -- 使用資料表自動遞增(AUTO_INCREMENT) `likes`
@@ -282,19 +319,25 @@ ALTER TABLE `likes`
 -- 使用資料表自動遞增(AUTO_INCREMENT) `messages`
 --
 ALTER TABLE `messages`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
 
 --
 -- 使用資料表自動遞增(AUTO_INCREMENT) `posts`
 --
 ALTER TABLE `posts`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+
+--
+-- 使用資料表自動遞增(AUTO_INCREMENT) `post_images`
+--
+ALTER TABLE `post_images`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- 使用資料表自動遞增(AUTO_INCREMENT) `users`
 --
 ALTER TABLE `users`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
 -- 已傾印資料表的限制式
@@ -326,6 +369,12 @@ ALTER TABLE `likes`
 ALTER TABLE `messages`
   ADD CONSTRAINT `messages_ibfk_1` FOREIGN KEY (`sender_id`) REFERENCES `users` (`id`),
   ADD CONSTRAINT `messages_ibfk_2` FOREIGN KEY (`receiver_id`) REFERENCES `users` (`id`);
+
+--
+-- 資料表的限制式 `post_images`
+--
+ALTER TABLE `post_images`
+  ADD CONSTRAINT `post_images_ibfk_1` FOREIGN KEY (`post_id`) REFERENCES `posts` (`id`) ON DELETE CASCADE;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
