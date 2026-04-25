@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- 主機： 127.0.0.1
--- 產生時間： 2026-04-19 08:43:17
+-- 產生時間： 2026-04-25 06:47:44
 -- 伺服器版本： 10.4.32-MariaDB
 -- PHP 版本： 8.2.12
 
@@ -134,6 +134,7 @@ CREATE TABLE `messages` (
   `sender_id` int(11) NOT NULL,
   `receiver_id` int(11) NOT NULL,
   `message` text NOT NULL,
+  `msg_type` enum('text','image') DEFAULT 'text',
   `is_read` tinyint(1) DEFAULT 0,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -142,12 +143,36 @@ CREATE TABLE `messages` (
 -- 傾印資料表的資料 `messages`
 --
 
-INSERT INTO `messages` (`id`, `sender_id`, `receiver_id`, `message`, `is_read`, `created_at`) VALUES
-(1, 3, 1, '你好', 1, '2026-04-06 05:30:12'),
-(2, 3, 1, '找我有甚麼事情???', 1, '2026-04-06 05:30:23'),
-(3, 1, 3, '抱歉，我加錯人好友了', 1, '2026-04-06 05:31:12'),
-(4, 3, 4, '安安', 1, '2026-04-19 06:37:23'),
-(5, 4, 3, '你好我是皮克敏', 0, '2026-04-19 06:37:59');
+INSERT INTO `messages` (`id`, `sender_id`, `receiver_id`, `message`, `msg_type`, `is_read`, `created_at`) VALUES
+(1, 3, 1, '你好', 'text', 1, '2026-04-06 05:30:12'),
+(2, 3, 1, '找我有甚麼事情???', 'text', 1, '2026-04-06 05:30:23'),
+(3, 1, 3, '抱歉，我加錯人好友了', 'text', 1, '2026-04-06 05:31:12'),
+(4, 3, 4, '安安', 'text', 1, '2026-04-19 06:37:23'),
+(5, 4, 3, '你好我是皮克敏', 'text', 1, '2026-04-19 06:37:59'),
+(6, 3, 4, 'IMG_20260425_060701_69ec3de5a382d.jpg', 'image', 0, '2026-04-25 04:07:01'),
+(7, 3, 4, '這我婆', 'text', 0, '2026-04-25 04:07:13'),
+(8, 3, 4, 'IMG_20260425_060733_69ec3e05ab54c.jpg', 'image', 0, '2026-04-25 04:07:33'),
+(9, 3, 4, 'test', 'text', 0, '2026-04-25 04:07:33'),
+(10, 3, 4, 'test', 'text', 0, '2026-04-25 04:09:25'),
+(11, 3, 4, 'IMG_69ec3e812ed12.png', 'image', 0, '2026-04-25 04:09:37'),
+(12, 3, 4, 'IMG_69ec3e8a9ab7c.jpg', 'image', 0, '2026-04-25 04:09:46'),
+(13, 3, 4, 'TEST', 'text', 0, '2026-04-25 04:13:42'),
+(14, 3, 4, 'TEST', 'text', 0, '2026-04-25 04:13:44'),
+(15, 3, 4, 'TEST', 'text', 0, '2026-04-25 04:13:52'),
+(16, 3, 4, 'TEST', 'text', 0, '2026-04-25 04:14:02'),
+(17, 3, 4, 'WTF', 'text', 0, '2026-04-25 04:16:38'),
+(18, 3, 4, 'WTF', 'text', 0, '2026-04-25 04:16:41'),
+(19, 3, 4, 'WTF', 'text', 0, '2026-04-25 04:16:54'),
+(20, 3, 4, 'WTF', 'text', 0, '2026-04-25 04:16:55'),
+(21, 3, 4, 'WTF', 'text', 0, '2026-04-25 04:16:55'),
+(22, 3, 4, 'WTF', 'text', 0, '2026-04-25 04:17:17'),
+(23, 3, 4, 'IMG_20260425_061900_69ec40b404a4b.jpg', 'image', 0, '2026-04-25 04:19:00'),
+(24, 3, 1, 'IMG_20260425_062158_69ec41668044b.jpg', 'image', 0, '2026-04-25 04:21:58'),
+(25, 3, 4, 'IMG_20260425_062203_69ec416b28886.jpg', 'image', 0, '2026-04-25 04:22:03'),
+(26, 3, 4, 'IMG_20260425_062208_69ec4170d91d9.jpg', 'image', 0, '2026-04-25 04:22:08'),
+(27, 3, 4, 'IMG_20260425_062314_69ec41b2665b7.jpg', 'image', 0, '2026-04-25 04:23:14'),
+(28, 3, 4, 'IMG_20260425_062323_69ec41bb9704b.jpg', 'image', 0, '2026-04-25 04:23:23'),
+(29, 3, 4, 'IMG_20260425_062327_69ec41bf9ad04.jpg', 'image', 0, '2026-04-25 04:23:27');
 
 -- --------------------------------------------------------
 
@@ -219,7 +244,8 @@ CREATE TABLE `users` (
 INSERT INTO `users` (`id`, `username`, `password`, `role`, `email`, `created_at`, `bio`, `profile_img`) VALUES
 (1, 'hotdog', '$2y$10$HWl.ASd.sOwQqHECMoZI7uk4SI0THwWRF9O48r1G6jaeDnAPabHji', 0, 'a0903291833@gmail.com', '2026-04-02 20:36:06', '喜愛小動物和運動', 'avatar_1_69d218dec8c460.27607006.jpg'),
 (3, 'cookieCat', '$2y$10$2hw6yTyFEv3dilv8UJRMS.XujyJ5y35GAuDcnUwjIh00rngA9nE8O', 0, 'a1133361@mail.nuk.edu.tw', '2026-04-03 16:23:23', '我絕對不會神機錯亂!!!我是會站上夜城頂端的男人!!!', 'avatar_3_69d21a720ba343.42845887.jpg'),
-(4, 'Python', '$2y$10$xN3HYWlwY.SsP4ZSn54YC.Nivw2NGN3LUo6F.dtB6ypZsoUg6v8E.', 0, 'aaa0903291833@gmail.com', '2026-04-19 14:25:59', '', 'avatar_4_69e475b8402588.22933674.jpg');
+(4, 'Python', '$2y$10$xN3HYWlwY.SsP4ZSn54YC.Nivw2NGN3LUo6F.dtB6ypZsoUg6v8E.', 0, 'aaa0903291833@gmail.com', '2026-04-19 14:25:59', '', 'avatar_4_69e475b8402588.22933674.jpg'),
+(5, 'Ice', '$2y$10$gDl4YfB6HiSKi3wFvM08gOjgKu9737dREQCCGxmKmazU4MmSysKiy', 0, 'aaaa0903291833@gmail.com', '2026-04-25 11:29:15', NULL, 'default_avatar.png');
 
 --
 -- 已傾印資料表的索引
@@ -319,7 +345,7 @@ ALTER TABLE `likes`
 -- 使用資料表自動遞增(AUTO_INCREMENT) `messages`
 --
 ALTER TABLE `messages`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=30;
 
 --
 -- 使用資料表自動遞增(AUTO_INCREMENT) `posts`
@@ -337,7 +363,7 @@ ALTER TABLE `post_images`
 -- 使用資料表自動遞增(AUTO_INCREMENT) `users`
 --
 ALTER TABLE `users`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
 
 --
 -- 已傾印資料表的限制式

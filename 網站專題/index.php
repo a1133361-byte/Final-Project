@@ -72,6 +72,7 @@ try {
 } catch (PDOException $e) {
     die("資料讀取失敗: " . $e->getMessage());
 }
+
 ?>
 <!DOCTYPE html>
 <html lang="zh-TW">
