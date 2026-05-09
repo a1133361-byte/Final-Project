@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- 主機： 127.0.0.1
--- 產生時間： 2026-04-25 06:47:44
+-- 產生時間： 2026-05-09 10:00:49
 -- 伺服器版本： 10.4.32-MariaDB
 -- PHP 版本： 8.2.12
 
@@ -41,7 +41,8 @@ INSERT INTO `categories` (`id`, `name`, `description`) VALUES
 (1, '心情', '分享你的生活點滴'),
 (2, '技術', '程式開發與電腦硬體討論'),
 (3, '美食', '全台各地美食推薦'),
-(4, '遊戲', '主機遊戲與手遊交流');
+(4, '遊戲', '主機遊戲與手遊交流'),
+(6, '語言', NULL);
 
 -- --------------------------------------------------------
 
@@ -97,9 +98,9 @@ INSERT INTO `friends` (`id`, `user_id`, `friend_id`, `status`, `created_at`) VAL
 (3, 1, 3, 'accepted', '2026-04-06 05:29:15'),
 (4, 3, 1, 'accepted', '2026-04-06 05:29:59'),
 (5, 4, 1, 'accepted', '2026-04-19 06:31:42'),
-(6, 4, 3, 'accepted', '2026-04-19 06:31:46'),
 (7, 1, 4, 'accepted', '2026-04-19 06:32:03'),
-(8, 3, 4, 'accepted', '2026-04-19 06:32:37');
+(9, 4, 3, 'accepted', '2026-05-08 05:58:27'),
+(10, 3, 4, 'accepted', '2026-05-08 06:07:35');
 
 -- --------------------------------------------------------
 
@@ -121,7 +122,9 @@ CREATE TABLE `likes` (
 INSERT INTO `likes` (`id`, `user_id`, `post_id`, `created_at`) VALUES
 (27, 3, 1, '2026-04-05 04:51:26'),
 (31, 3, 3, '2026-04-05 08:55:01'),
-(32, 1, 4, '2026-04-05 09:21:01');
+(32, 1, 4, '2026-04-05 09:21:01'),
+(35, 6, 5, '2026-05-09 07:43:23'),
+(36, 3, 4, '2026-05-09 07:59:12');
 
 -- --------------------------------------------------------
 
@@ -245,7 +248,8 @@ INSERT INTO `users` (`id`, `username`, `password`, `role`, `email`, `created_at`
 (1, 'hotdog', '$2y$10$HWl.ASd.sOwQqHECMoZI7uk4SI0THwWRF9O48r1G6jaeDnAPabHji', 0, 'a0903291833@gmail.com', '2026-04-02 20:36:06', '喜愛小動物和運動', 'avatar_1_69d218dec8c460.27607006.jpg'),
 (3, 'cookieCat', '$2y$10$2hw6yTyFEv3dilv8UJRMS.XujyJ5y35GAuDcnUwjIh00rngA9nE8O', 0, 'a1133361@mail.nuk.edu.tw', '2026-04-03 16:23:23', '我絕對不會神機錯亂!!!我是會站上夜城頂端的男人!!!', 'avatar_3_69d21a720ba343.42845887.jpg'),
 (4, 'Python', '$2y$10$xN3HYWlwY.SsP4ZSn54YC.Nivw2NGN3LUo6F.dtB6ypZsoUg6v8E.', 0, 'aaa0903291833@gmail.com', '2026-04-19 14:25:59', '', 'avatar_4_69e475b8402588.22933674.jpg'),
-(5, 'Ice', '$2y$10$gDl4YfB6HiSKi3wFvM08gOjgKu9737dREQCCGxmKmazU4MmSysKiy', 0, 'aaaa0903291833@gmail.com', '2026-04-25 11:29:15', NULL, 'default_avatar.png');
+(5, 'Ice', '$2y$10$gDl4YfB6HiSKi3wFvM08gOjgKu9737dREQCCGxmKmazU4MmSysKiy', 0, 'aaaa0903291833@gmail.com', '2026-04-25 11:29:15', NULL, 'default_avatar.png'),
+(6, '老大', '$2y$10$td3eU4Nv7djvqJFl2m/l1eiX34yy0cydMD4dxtYjyP6XcU4jlCG8S', 1, 'a1133361@mail.nuk.edu.tw', '2026-05-09 15:38:54', NULL, 'default_avatar.png');
 
 --
 -- 已傾印資料表的索引
@@ -321,7 +325,7 @@ ALTER TABLE `users`
 -- 使用資料表自動遞增(AUTO_INCREMENT) `categories`
 --
 ALTER TABLE `categories`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
 -- 使用資料表自動遞增(AUTO_INCREMENT) `comments`
@@ -333,13 +337,13 @@ ALTER TABLE `comments`
 -- 使用資料表自動遞增(AUTO_INCREMENT) `friends`
 --
 ALTER TABLE `friends`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
 
 --
 -- 使用資料表自動遞增(AUTO_INCREMENT) `likes`
 --
 ALTER TABLE `likes`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=33;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=37;
 
 --
 -- 使用資料表自動遞增(AUTO_INCREMENT) `messages`
@@ -363,7 +367,7 @@ ALTER TABLE `post_images`
 -- 使用資料表自動遞增(AUTO_INCREMENT) `users`
 --
 ALTER TABLE `users`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
 -- 已傾印資料表的限制式

@@ -4,10 +4,15 @@ require_once "includes/dbh.inc.php";
 
 $searchTerm = isset($_GET['search']) ? trim($_GET['search']) : '';
 $catID = isset($_GET['category']) ? $_GET['category'] : '';
-$currentCatName = "";
+$viewFriendsActivity = isset($_GET['view']) && $_GET['view'] === 'friends_activity';
+
+// 判斷是否為管理員 (假設 role = 1 是管理者)
+$isAdmin = isset($_SESSION['role']) && $_SESSION['role'] == 1;
+
+$currentCatName = "所有文章";
+$currentCatDesc = "探索社群中的最新動態與深度討論。";
 
 try {
-    // 1. 取得所有分類
     $cat_query = $pdo->query("SELECT * FROM categories ORDER BY id ASC");
     $all_categories = $cat_query->fetchAll();
 
@@ -15,351 +20,382 @@ try {
         foreach ($all_categories as $cat) {
             if ($cat['id'] == $catID) {
                 $currentCatName = $cat['name'];
+                $currentCatDesc = "歡迎來到 " . $cat['name'] . " 看板，這裡充滿了精彩的內容。";
                 break;
             }
         }
     }
 
-    // 2. 取得好友相關資料 (僅登入者)
     $my_friends = [];
-    $requests = [];
+    $friend_ids = [];
     if (isset($_SESSION['user_id'])) {
         $uid = $_SESSION['user_id'];
-
-        // (A) 取得待處理的好友請求 (別人想加我，但我還沒同意的)
-        $req_sql = "SELECT users.id, users.username, users.profile_img 
-                    FROM friends 
-                    JOIN users ON friends.user_id = users.id 
-                    WHERE friends.friend_id = ? AND friends.status = 'pending'
-                    ORDER BY friends.created_at DESC";
-        $req_stmt = $pdo->prepare($req_sql);
-        $req_stmt->execute([$uid]);
-        $requests = $req_stmt->fetchAll();
-
-        // (B) 取得正式好友列表 (僅限 status = 'accepted')
-        $f_sql = "SELECT users.id, users.username, users.profile_img 
-                  FROM friends 
-                  JOIN users ON friends.friend_id = users.id 
-                  WHERE friends.user_id = ? AND friends.status = 'accepted'
-                  ORDER BY friends.created_at DESC LIMIT 10";
+        $f_sql = "SELECT users.id, users.username, users.profile_img FROM friends JOIN users ON friends.friend_id = users.id WHERE friends.user_id = ? AND friends.status = 'accepted' LIMIT 10";
         $f_stmt = $pdo->prepare($f_sql);
         $f_stmt->execute([$uid]);
         $my_friends = $f_stmt->fetchAll();
+        $friend_ids = array_column($my_friends, 'id');
     }
 
-    // 3. 取得文章列表
-    $sql = "SELECT posts.*, users.username, users.profile_img, categories.name AS cat_name 
-            FROM posts 
-            JOIN users ON posts.user_id = users.id 
-            JOIN categories ON posts.category_id = categories.id 
-            WHERE 1=1";
-
-    if ($searchTerm !== '') {
-        $sql .= " AND (posts.title LIKE :search OR posts.content LIKE :search)";
+    if ($viewFriendsActivity && !empty($friend_ids)) {
+        $currentCatName = "好友動態";
+        $currentCatDesc = "看看你的好友們最近在忙些什麼。";
+        $placeholders = implode(',', array_fill(0, count($friend_ids), '?'));
+        
+        $activity_sql = "
+            (SELECT 'post' as type, p.id as target_id, p.title as title, p.content as content, p.created_at, u.username, u.profile_img 
+             FROM posts p 
+             JOIN users u ON p.user_id = u.id 
+             WHERE p.user_id IN ($placeholders))
+            UNION ALL
+            (SELECT 'comment' as type, p.id as target_id, p.title as title, com.content as content, com.created_at, u.username, u.profile_img 
+             FROM comments com
+             JOIN posts p ON com.post_id = p.id
+             JOIN users u ON com.user_id = u.id
+             WHERE com.user_id IN ($placeholders))
+            UNION ALL
+            (SELECT 'like' as type, p.id as target_id, p.title as title, '對這篇文章點了個讚' as content, l.created_at, u.username, u.profile_img 
+             FROM likes l
+             JOIN posts p ON l.post_id = p.id
+             JOIN users u ON l.user_id = u.id
+             WHERE l.user_id IN ($placeholders))
+            ORDER BY created_at DESC LIMIT 50
+        ";
+        
+        $stmt = $pdo->prepare($activity_sql);
+        $stmt->execute(array_merge($friend_ids, $friend_ids, $friend_ids));
+        $activities = $stmt->fetchAll();
+        $posts = [];
+    } else {
+        $sql = "SELECT posts.*, users.username, users.profile_img, categories.name AS cat_name FROM posts JOIN users ON posts.user_id = users.id JOIN categories ON posts.category_id = categories.id WHERE 1=1";
+        if ($searchTerm !== '') $sql .= " AND (posts.title LIKE :search OR posts.content LIKE :search)";
+        if ($catID !== '') $sql .= " AND posts.category_id = :catID";
+        $sql .= " ORDER BY posts.created_at DESC";
+        $stmt = $pdo->prepare($sql);
+        if ($searchTerm !== '') $stmt->bindValue(':search', '%' . $searchTerm . '%');
+        if ($catID !== '') $stmt->bindValue(':catID', $catID);
+        $stmt->execute();
+        $posts = $stmt->fetchAll();
+        $activities = [];
     }
-    if ($catID !== '') {
-        $sql .= " AND posts.category_id = :catID";
-    }
-
-    $sql .= " ORDER BY posts.created_at DESC";
-    $stmt = $pdo->prepare($sql);
-
-    if ($searchTerm !== '') $stmt->bindValue(':search', '%' . $searchTerm . '%');
-    if ($catID !== '') $stmt->bindValue(':catID', $catID);
-
-    $stmt->execute();
-    $posts = $stmt->fetchAll();
 } catch (PDOException $e) {
     die("資料讀取失敗: " . $e->getMessage());
 }
-
 ?>
+
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PHP 論壇 - 探索社群</title>
+    <title><?= htmlspecialchars($currentCatName) ?> - PHP Forum</title>
     <style>
         :root {
-            --bg-color: #f4f7f6;
+            --bg-color: #f8fafc;
             --card-bg: #ffffff;
-            --text-color: #333333;
-            --text-muted: #636e72;
-            --header-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            --border-color: #dddddd;
-            --input-bg: #ffffff;
-            --tag-bg: #eef2ff;
+            --text-color: #0f172a;
+            --text-muted: #64748b;
+            --nav-bg: rgba(255, 255, 255, 0.85);
+            --accent-color: #6366f1;
+            --accent-soft: rgba(99, 102, 241, 0.1);
+            --header-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            --border-color: #e2e8f0;
+            --sidebar-item-hover: #f1f5f9;
+            --admin-color: #f59e0b;
+            --admin-soft: rgba(245, 158, 11, 0.1);
         }
 
         [data-theme="dark"] {
-            --bg-color: #1a1a2e;
-            --card-bg: #16213e;
-            --text-color: #e9ecef;
-            --text-muted: #b2bec3;
-            --header-gradient: linear-gradient(135deg, #1f4068 0%, #16213e 100%);
-            --border-color: #444444;
-            --input-bg: #0f3460;
-            --tag-bg: #1f4068;
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-color: #f1f5f9;
+            --text-muted: #94a3b8;
+            --nav-bg: rgba(15, 23, 42, 0.9);
+            --border-color: #334155;
+            --sidebar-item-hover: #334155;
+            --accent-soft: rgba(99, 102, 241, 0.2);
+            --admin-soft: rgba(245, 158, 11, 0.15);
         }
 
         body { 
-            font-family: 'Segoe UI', 'Microsoft JhengHei', sans-serif; 
+            font-family: 'Inter', system-ui, sans-serif; 
             background-color: var(--bg-color); 
             margin: 0; 
-            color: var(--text-color);
-            transition: background-color 0.3s, color 0.3s;
+            color: var(--text-color); 
+            transition: background-color 0.3s, color 0.3s; 
         }
-        
+
+        /* --- Header & Dropdown --- */
         header { 
-            background: var(--header-gradient); 
-            color: white; padding: 0.8rem 2rem; display: flex; 
-            justify-content: space-between; align-items: center; 
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1); position: sticky; top: 0; z-index: 1000; 
+            background: var(--nav-bg); 
+            backdrop-filter: blur(10px); 
+            border-bottom: 1px solid var(--border-color); 
+            position: sticky; 
+            top: 0; 
+            z-index: 1000; 
+            padding: 12px 0; 
+            transition: background-color 0.3s, border-color 0.3s;
         }
-        header a { text-decoration: none; color: white; }
-        header a h1 { margin: 0; font-size: 1.5rem; }
+        .nav-container { max-width: 1400px; margin: 0 auto; padding: 0 25px; display: flex; justify-content: space-between; align-items: center; }
+        .logo h1 { margin: 0; font-size: 1.4rem; font-weight: 800; background: var(--header-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
 
-        .nav-links { display: flex; align-items: center; gap: 20px; }
-        .nav-links a { color: white; text-decoration: none; font-weight: 500; }
-        
-        .theme-toggle {
-            background: rgba(255, 255, 255, 0.2);
-            border: none; color: white; padding: 8px 12px; border-radius: 20px;
-            cursor: pointer; font-size: 14px;
+        .user-trigger { 
+            display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 5px 12px; border-radius: 50px; transition: 0.2s; 
         }
+        .user-trigger:hover { background: var(--sidebar-item-hover); }
+        .user-trigger span { font-weight: 700; font-size: 0.95rem; }
 
-        .btn-post { background: #ff9f43; padding: 8px 18px; border-radius: 8px; font-weight: bold !important; }
-        .user-link { display: flex; align-items: center; gap: 10px; padding: 5px 15px; background: rgba(255, 255, 255, 0.1); border-radius: 50px; }
-        .nav-avatar-img { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; }
-
-        .main-wrapper {
-            max-width: 1200px;
-            margin: 30px auto;
-            padding: 0 20px;
-            display: grid;
-            grid-template-columns: 1fr 320px;
-            gap: 30px;
+        .dropdown-menu { 
+            position: absolute; 
+            right: 0; 
+            top: 125%; 
+            width: 240px; 
+            background: var(--card-bg); 
+            border: 1px solid var(--border-color); 
+            border-radius: 16px; 
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15); 
+            display: none; 
+            flex-direction: column; 
+            overflow: hidden; 
+            z-index: 1100;
         }
-
-        .sidebar { display: flex; flex-direction: column; gap: 20px; }
-        .sidebar-card {
-            background: var(--card-bg);
-            padding: 20px;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        }
-        .sidebar-title { 
-            margin-top: 0; font-size: 1.1rem; font-weight: bold;
-            padding-bottom: 10px; border-bottom: 2px solid var(--tag-bg);
-            margin-bottom: 15px; display: flex; align-items: center; gap: 8px;
-        }
-
-        .friend-item {
-            display: flex; align-items: center; gap: 12px;
-            padding: 10px 0; text-decoration: none; color: var(--text-color);
+        .dropdown-menu.active { display: flex; }
+        .dropdown-menu a { 
+            padding: 12px 20px; 
+            text-decoration: none; 
+            color: var(--text-color); 
+            font-weight: 600; 
+            font-size: 0.9rem; 
+            transition: 0.2s; 
             border-bottom: 1px solid var(--border-color);
-            transition: 0.2s;
         }
-        .friend-item:last-child { border-bottom: none; }
-        .btn-accept {
-            background: #27ae60; color: white; border: none; padding: 5px 10px;
-            border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold;
-        }
-        .chat-icon {
-            text-decoration: none; font-size: 1.2rem; filter: grayscale(1); transition: 0.2s;
-        }
-        .chat-icon:hover { filter: grayscale(0); transform: scale(1.2); }
+        .dropdown-menu a:last-child { border-bottom: none; }
+        .dropdown-menu a:hover { background: var(--sidebar-item-hover); color: var(--accent-color); }
+        
+        .admin-link { color: var(--admin-color) !important; background: var(--admin-soft); }
+        .admin-link:hover { background: var(--admin-color) !important; color: white !important; }
 
-        .filter-container { 
-            display: flex; gap: 15px; margin-bottom: 30px; 
-            background: var(--card-bg); padding: 20px; border-radius: 12px; 
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05); align-items: center; 
-        }
-        .search-form { display: flex; flex: 2; gap: 10px; }
-        .search-input { 
-            flex: 1; padding: 12px; border: 1px solid var(--border-color); 
-            border-radius: 8px; background-color: var(--input-bg); color: var(--text-color);
-        }
-        .btn-search { padding: 12px 20px; background: #764ba2; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
-        .cat-select { padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; background-color: var(--input-bg); color: var(--text-color); cursor: pointer; }
+        /* --- Main Layout --- */
+        .main-wrapper { max-width: 1400px; margin: 20px auto; padding: 0 25px; display: grid; grid-template-columns: 260px 1fr 300px; gap: 30px; }
 
-        .section-title { border-left: 5px solid #764ba2; padding-left: 15px; margin-bottom: 25px; }
-        .post-card { 
-            background: var(--card-bg); border-radius: 12px; padding: 25px; 
-            margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); transition: 0.2s; 
+        .left-sidebar { position: sticky; top: 90px; height: fit-content; }
+        .menu-label { font-size: 0.75rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin: 20px 0 10px 10px; }
+        
+        .menu-btn, .menu-link { 
+            display: flex; align-items: center; gap: 10px; width: 100%; box-sizing: border-box;
+            padding: 12px 15px; margin-bottom: 5px; border: 1px solid transparent; border-radius: 12px; 
+            background: transparent; color: var(--text-color); font-weight: 600; text-align: left; 
+            cursor: pointer; transition: 0.2s; text-decoration: none; font-size: 1rem;
         }
-        .post-card:hover { transform: translateY(-5px); }
-        .tag { background: var(--tag-bg); color: #667eea; font-size: 12px; font-weight: bold; padding: 4px 10px; border-radius: 20px; display: inline-block; margin-bottom: 10px; }
-        .post-info { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px; display: flex; align-items: center; gap: 10px; }
-        .post-avatar { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; }
-        .author-link { color: #764ba2; text-decoration: none; font-weight: bold; }
-        .post-content { color: var(--text-muted); line-height: 1.6; margin-bottom: 15px; }
-        .read-more { color: #764ba2; text-decoration: none; font-weight: 600; }
+        .menu-btn:hover, .menu-link:hover { background: var(--sidebar-item-hover); color: var(--accent-color); }
+        .menu-btn.active, .menu-link.active { background: var(--accent-soft); color: var(--accent-color); border-color: rgba(99, 102, 241, 0.3); }
 
-        @media (max-width: 992px) {
-            .main-wrapper { grid-template-columns: 1fr; }
-            .sidebar { order: 2; }
-        }
+        /* 管理員專用側邊欄樣式 */
+        .admin-sidebar-item { border-left: 3px solid var(--admin-color) !important; }
+
+        /* --- 文章與內容卡片 --- */
+        .category-header { background: var(--card-bg); padding: 30px; border-radius: 24px; border: 1px solid var(--border-color); margin-bottom: 25px; position: relative; overflow: hidden; transition: 0.3s; }
+        .search-box { background: var(--card-bg); border: 2px solid var(--border-color); border-radius: 18px; padding: 5px 5px 5px 20px; display: flex; gap: 10px; transition: 0.3s; margin-bottom: 30px; }
+        .search-box:focus-within { border-color: var(--accent-color); }
+        .search-box input { flex: 1; border: none; background: transparent; color: var(--text-color); outline: none; }
+        .search-box button { background: var(--accent-color); color: white; border: none; padding: 10px 20px; border-radius: 14px; cursor: pointer; font-weight: 700; }
+
+        .post-card, .activity-card { background: var(--card-bg); border-radius: 20px; padding: 25px; margin-bottom: 20px; border: 1px solid var(--border-color); transition: 0.3s; }
+        .post-card:hover { transform: translateY(-3px); box-shadow: 0 10px 20px rgba(0,0,0,0.05); }
+
+        .activity-tag { font-size: 0.7rem; font-weight: 800; padding: 3px 8px; border-radius: 6px; color: white; }
+        .tag-post { background: #6366f1; }
+        .tag-comment { background: #10b981; }
+        .tag-like { background: #f43f5e; }
+
+        /* Modal */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); backdrop-filter: blur(8px); display: none; justify-content: center; align-items: center; z-index: 2000; }
+        .modal-content { background: var(--card-bg); width: 90%; max-width: 500px; padding: 30px; border-radius: 25px; border: 1px solid var(--border-color); }
+
+        @media (max-width: 1100px) { .main-wrapper { grid-template-columns: 1fr 300px; } .left-sidebar { display: none; } }
     </style>
 </head>
-<body>
+<body data-theme="light">
 
 <header>
-    <a href="index.php"><h1>🚀 PHP Forum</h1></a>
-    <div class="nav-links">
-        <button class="theme-toggle" id="themeBtn">🌙 切換模式</button>
-        <a href="index.php">首頁</a>
-        <?php if (isset($_SESSION["user_id"])): ?>
-            <a href="create_post.php" class="btn-post">我要發文</a>
-            <a href="logout.php">登出</a>
-            <a href="profile.php?id=<?= $_SESSION['user_id'] ?>" class="user-link">
-                <?php $nav_avatar = !empty($_SESSION['profile_img']) ? "uploads/users_profile_img/".$_SESSION['profile_img'] : "uploads/default_avatar.png"; ?>
-                <img src="<?= $nav_avatar ?>" class="nav-avatar-img">
-                <span><?= htmlspecialchars($_SESSION["username"]) ?></span>
-            </a>
-        <?php else: ?>
-            <a href="login.php">登入</a>
-            <a href="regster.php">註冊</a>
-        <?php endif; ?>
+    <div class="nav-container">
+        <a href="index.php" class="logo" style="text-decoration:none"><h1>🚀 PHP Forum</h1></a>
+        <div style="display:flex; align-items:center; gap:15px;">
+            <button id="themeBtn" title="切換主題" style="background:none; border:none; cursor:pointer; font-size:1.3rem; padding:5px; border-radius:50%; transition: 0.2s;">🌓</button>
+            <?php if (isset($_SESSION["user_id"])): ?>
+                <div style="position:relative;">
+                    <div class="user-trigger" id="userTrigger">
+                        <img src="<?= !empty($_SESSION['profile_img']) ? "uploads/users_profile_img/".$_SESSION['profile_img'] : "uploads/default_avatar.png" ?>" style="width:32px; height:32px; border-radius:50%; object-fit:cover; border: 2px solid <?= $isAdmin ? 'var(--admin-color)' : 'var(--accent-color)' ?>;">
+                        <span style="<?= $isAdmin ? 'color: var(--admin-color);' : '' ?>"><?= htmlspecialchars($_SESSION["username"]) ?></span>
+                    </div>
+                    <div class="dropdown-menu" id="dropdownMenu">
+                        <div style="padding: 10px 20px; font-size: 0.7rem; color: var(--text-muted); font-weight: 800; text-transform: uppercase;">使用者功能</div>
+                        <a href="profile.php?id=<?= $_SESSION['user_id'] ?>">👤 我的個人資料</a>
+                        <a href="create_post.php">✍️ 撰寫新文章</a>
+                        
+                        <?php if ($isAdmin): ?>
+                            <div style="padding: 10px 20px; font-size: 0.7rem; color: var(--admin-color); font-weight: 800; text-transform: uppercase; background: var(--admin-soft);">管理員功能</div>
+                            <a href="admin_categories.php" class="admin-link">🛠️ 看板管理 (新增看板)</a>
+                            <a href="admin_dashboard.php" class="admin-link">📊 後台數據分析</a>
+                        <?php endif; ?>
+                        
+                        <a href="logout.php" style="color:#ef4444; font-weight:700;">🚪 登出系統</a>
+                    </div>
+                </div>
+            <?php else: ?>
+                <a href="login.php" style="text-decoration:none; background:var(--accent-color); color:white; padding:8px 20px; border-radius:50px; font-weight:700;">登入</a>
+            <?php endif; ?>
+        </div>
     </div>
 </header>
 
 <div class="main-wrapper">
-    <main class="content-area">
-        <h2 class="section-title">
-            <?php 
-                if ($searchTerm !== '') echo "🔍 搜尋結果：$searchTerm";
-                elseif ($currentCatName !== '') echo "📁 分類：$currentCatName";
-                else echo "最新探索";
-            ?>
-        </h2>
+    <aside class="left-sidebar">
+        <div class="menu-label">主選單</div>
+        <a href="index.php" class="menu-link <?= ($catID == '' && !$viewFriendsActivity) ? 'active' : '' ?>">🏠 探索牆</a>
+        
+        <?php if(isset($_SESSION['user_id'])): ?>
+            <a href="index.php?view=friends_activity" class="menu-link <?= $viewFriendsActivity ? 'active' : '' ?>">✨ 好友動態</a>
+        <?php endif; ?>
+        
+        <button class="menu-btn" id="openCategories">📂 所有看板</button>
 
-        <div class="filter-container">
-            <form action="index.php" method="GET" class="search-form">
-                <input type="hidden" name="category" value="<?= htmlspecialchars($catID) ?>">
-                <input type="text" name="search" class="search-input" placeholder="搜尋文章..." value="<?= htmlspecialchars($searchTerm) ?>">
-                <button type="submit" class="btn-search">搜尋</button>
-            </form>
+        <?php if ($isAdmin): ?>
+            <div class="menu-label" style="color: var(--admin-color);">管理員專區</div>
+            <a href="admin_categories.php" class="menu-link admin-sidebar-item">🛠️ 新增/編輯看板</a>
+            <a href="admin_dashboard.php" class="menu-link admin-sidebar-item">📈 查看網站數據</a>
+        <?php endif; ?>
+        
+        <div class="menu-label">常用分類</div>
+        <?php foreach (array_slice($all_categories, 0, 6) as $cat): ?>
+            <a href="index.php?category=<?= $cat['id'] ?>" class="menu-link <?= ($catID == $cat['id']) ? 'active' : '' ?>">
+                # <?= htmlspecialchars($cat['name']) ?>
+            </a>
+        <?php endforeach; ?>
+    </aside>
 
-            <select class="cat-select" onchange="filterByCategory(this.value)">
-                <option value="" <?= ($catID === '') ? 'selected' : '' ?>>📁 所有分類</option>
-                <?php foreach ($all_categories as $cat): ?>
-                    <option value="<?= $cat['id'] ?>" <?= ($catID == $cat['id']) ? 'selected' : '' ?>>
-                        <?= htmlspecialchars($cat['name']) ?>
-                    </option>
-                <?php endforeach; ?>
-            </select>
+    <main>
+        <div class="category-header">
+            <h2 style="margin:0; position:relative; z-index:1;"><?= ($viewFriendsActivity) ? '✨ ' : (($catID == '') ? '🌏 ' : '📂 ') ?><?= htmlspecialchars($currentCatName) ?></h2>
+            <p style="margin:10px 0 0 0; color:var(--text-muted); position:relative; z-index:1;"><?= htmlspecialchars($currentCatDesc) ?></p>
         </div>
 
-        <?php if (count($posts) > 0): ?>
-            <?php foreach ($posts as $post): ?>
-                <div class="post-card">
-                    <span class="tag"><?= htmlspecialchars($post['cat_name']) ?></span>
-                    <h3><a href="view_post.php?id=<?= $post['id'] ?>" style="text-decoration:none; color:inherit;"><?= htmlspecialchars($post['title']) ?></a></h3>
-                    <div class="post-info">
-                        <?php $p_avatar = !empty($post['profile_img']) ? "uploads/users_profile_img/".$post['profile_img'] : "uploads/default_avatar.png"; ?>
-                        <img src="<?= $p_avatar ?>" class="post-avatar">
-                        <div>
-                            <a href="profile.php?id=<?= $post['user_id'] ?>" class="author-link"><?= htmlspecialchars($post['username']) ?></a> • 
-                            📅 <?= date('Y-m-d', strtotime($post['created_at'])) ?>
+        <?php if(!$viewFriendsActivity): ?>
+        <form action="index.php" method="GET" class="search-box">
+            <input type="text" name="search" placeholder="在 <?= htmlspecialchars($currentCatName) ?> 中搜尋..." value="<?= htmlspecialchars($searchTerm) ?>">
+            <?php if($catID): ?> <input type="hidden" name="category" value="<?= $catID ?>"> <?php endif; ?>
+            <button type="submit">搜尋</button>
+        </form>
+        <?php endif; ?>
+
+        <?php if ($viewFriendsActivity): ?>
+            <!-- 好友動態內容 (省略以維持程式碼精簡) -->
+            <?php if (count($activities) > 0): ?>
+                <?php foreach ($activities as $act): ?>
+                    <div class="activity-card">
+                        <!-- 動態內容卡片渲染 -->
+                        <div style="display:flex; align-items:center; gap:12px; margin-bottom:15px;">
+                            <img src="<?= !empty($act['profile_img']) ? "uploads/users_profile_img/".$act['profile_img'] : "uploads/default_avatar.png" ?>" style="width:40px; height:40px; border-radius:50%; object-fit:cover;">
+                            <div>
+                                <span style="font-weight:800;"><?= htmlspecialchars($act['username']) ?></span>
+                                <span class="activity-tag tag-<?= $act['type'] ?>"><?= $act['type'] ?></span>
+                            </div>
                         </div>
+                        <p><?= htmlspecialchars(mb_substr(strip_tags($act['content']), 0, 80)) ?>...</p>
                     </div>
-                    <div class="post-content">
-                        <?= htmlspecialchars(mb_substr(strip_tags($post['content']), 0, 80)) ?>...
-                    </div>
-                    <a href="view_post.php?id=<?= $post['id'] ?>" class="read-more">繼續閱讀 →</a>
-                </div>
-            <?php endforeach; ?>
+                <?php endforeach; ?>
+            <?php endif; ?>
         <?php else: ?>
-            <div style="text-align: center; padding: 50px; color: var(--text-muted);">
-                <p>找不到符合條件的文章。</p>
-            </div>
+            <?php foreach ($posts as $post): ?>
+                <article class="post-card">
+                    <span style="background:var(--accent-soft); color:var(--accent-color); font-size:0.75rem; font-weight:800; padding:4px 12px; border-radius:50px;"># <?= htmlspecialchars($post['cat_name']) ?></span>
+                    <h2 style="margin:12px 0;"><a href="view_post.php?id=<?= $post['id'] ?>" style="text-decoration:none; color:var(--text-color); font-weight:800;"><?= htmlspecialchars($post['title']) ?></a></h2>
+                    <div style="display:flex; align-items:center; gap:10px; margin-bottom:15px; font-size:0.9rem;">
+                        <img src="<?= !empty($post['profile_img']) ? "uploads/users_profile_img/".$post['profile_img'] : "uploads/default_avatar.png" ?>" style="width:30px; height:30px; border-radius:50%; object-fit:cover;">
+                        <span style="font-weight:600;"><?= htmlspecialchars($post['username']) ?></span>
+                        <span style="color:var(--text-muted);">• <?= date('Y/m/d', strtotime($post['created_at'])) ?></span>
+                    </div>
+                    <p style="color:var(--text-muted); line-height:1.6;"><?= htmlspecialchars(mb_substr(strip_tags($post['content']), 0, 110)) ?>...</p>
+                </article>
+            <?php endforeach; ?>
         <?php endif; ?>
     </main>
 
-    <aside class="sidebar">
-        <?php if (isset($_SESSION['user_id']) && count($requests) > 0): ?>
-            <div class="sidebar-card" style="border: 1px solid #ff9f43;">
-                <h3 class="sidebar-title">🔔 好友請求 (<?= count($requests) ?>)</h3>
-                <?php foreach ($requests as $req): ?>
-                    <div class="friend-item" style="justify-content: space-between;">
-                        <div style="display:flex; align-items:center; gap:10px;">
-                            <?php $r_img = !empty($req['profile_img']) ? "uploads/users_profile_img/".$req['profile_img'] : "uploads/default_avatar.png"; ?>
-                            <img src="<?= $r_img ?>" class="nav-avatar-img">
-                            <span style="font-size: 0.9rem;"><?= htmlspecialchars($req['username']) ?></span>
-                        </div>
-                        <button class="btn-accept" onclick="handleFriendRequest(<?= $req['id'] ?>, 'accept')">同意</button>
-                    </div>
-                <?php endforeach; ?>
-            </div>
-        <?php endif; ?>
-
-        <?php if (isset($_SESSION['user_id'])): ?>
-            <div class="sidebar-card">
-                <h3 class="sidebar-title">🤝 我的好友</h3>
-                <?php if (count($my_friends) > 0): ?>
+    <aside class="right-sidebar">
+        <div style="background:var(--card-bg); padding:25px; border-radius:24px; border:1px solid var(--border-color);">
+            <h3 style="margin-top:0; font-size:1.1rem;">🤝 在線好友</h3>
+            <div style="display:flex; flex-direction:column; gap:15px;">
+                <?php if (isset($_SESSION['user_id']) && count($my_friends) > 0): ?>
                     <?php foreach ($my_friends as $f): ?>
-                        <div class="friend-item" style="justify-content: space-between;">
-                            <a href="profile.php?id=<?= $f['id'] ?>" style="display:flex; align-items:center; gap:12px; text-decoration:none; color:inherit;">
-                                <?php $f_img = !empty($f['profile_img']) ? "uploads/users_profile_img/".$f['profile_img'] : "uploads/default_avatar.png"; ?>
-                                <img src="<?= $f_img ?>" class="nav-avatar-img">
-                                <span><?= htmlspecialchars($f['username']) ?></span>
+                        <div style="display:flex; align-items:center; justify-content:space-between;">
+                            <a href="profile.php?id=<?= $f['id'] ?>" style="display:flex; align-items:center; gap:10px; text-decoration:none; color:inherit;">
+                                <img src="<?= !empty($f['profile_img']) ? "uploads/users_profile_img/".$f['profile_img'] : "uploads/default_avatar.png" ?>" style="width:35px; height:35px; border-radius:50%; object-fit:cover;">
+                                <span style="font-weight:700; font-size:0.9rem;"><?= htmlspecialchars($f['username']) ?></span>
                             </a>
-                            <a href="chat.php?user_id=<?= $f['id'] ?>" class="chat-icon" title="傳送私訊">💬</a>
+                            <a href="chat.php?user_id=<?= $f['id'] ?>" style="text-decoration:none;">💬</a>
                         </div>
                     <?php endforeach; ?>
                 <?php else: ?>
-                    <p style="color: var(--text-muted); font-size: 0.9rem; text-align: center; margin: 20px 0;">目前尚無好友</p>
+                    <p style="font-size:0.85rem; color:var(--text-muted);">目前沒有好友在線</p>
                 <?php endif; ?>
             </div>
-        <?php endif; ?>
+        </div>
     </aside>
 </div>
 
+<!-- 分類 Modal -->
+<div class="modal-overlay" id="categoryModal">
+    <div class="modal-content">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+            <h2 style="margin:0;">探索所有看板</h2>
+            <span id="closeModal" style="cursor:pointer; font-size:1.5rem;">&times;</span>
+        </div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+            <?php foreach ($all_categories as $cat): ?>
+                <a href="index.php?category=<?= $cat['id'] ?>" style="padding:12px; background:var(--bg-color); border-radius:10px; text-decoration:none; color:var(--text-color); text-align:center; font-weight:600; border:1px solid var(--border-color);">
+                    # <?= htmlspecialchars($cat['name']) ?>
+                </a>
+            <?php endforeach; ?>
+        </div>
+    </div>
+</div>
+
 <script>
-    // 主題切換邏輯
+    // --- 主題切換控制 ---
     const themeBtn = document.getElementById('themeBtn');
-    const currentTheme = localStorage.getItem('theme');
-    if (currentTheme === 'dark') {
-        document.body.setAttribute('data-theme', 'dark');
-        themeBtn.textContent = '☀️ 淺色模式';
-    }
-    themeBtn.addEventListener('click', () => {
-        let theme = 'light';
-        if (document.body.getAttribute('data-theme') !== 'dark') {
-            document.body.setAttribute('data-theme', 'dark');
-            theme = 'dark';
-            themeBtn.textContent = '☀️ 淺色模式';
-        } else {
-            document.body.removeAttribute('data-theme');
-            themeBtn.textContent = '🌙 深色模式';
-        }
-        localStorage.setItem('theme', theme);
-    });
+    const currentTheme = localStorage.getItem('theme') || 'light';
+    document.body.setAttribute('data-theme', currentTheme);
 
-    // 分類跳轉
-    function filterByCategory(catId) {
-        const searchInput = document.querySelector('input[name="search"]');
-        const searchTerm = searchInput ? searchInput.value : '';
-        let url = 'index.php?category=' + catId;
-        if (searchTerm) url += '&search=' + encodeURIComponent(searchTerm);
-        window.location.href = url;
+    themeBtn.onclick = () => {
+        const targetTheme = document.body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        document.body.setAttribute('data-theme', targetTheme);
+        localStorage.setItem('theme', targetTheme);
+    };
+
+    // --- 下拉選單控制 ---
+    const userTrigger = document.getElementById('userTrigger');
+    const dropdownMenu = document.getElementById('dropdownMenu');
+    
+    if(userTrigger && dropdownMenu) {
+        userTrigger.onclick = (e) => { 
+            e.stopPropagation(); 
+            dropdownMenu.classList.toggle('active'); 
+        };
+        
+        document.addEventListener('click', (e) => {
+            if (!userTrigger.contains(e.target)) {
+                dropdownMenu.classList.remove('active');
+            }
+        });
     }
 
-    // AJAX 處理好友同意
-    function handleFriendRequest(friendId, action) {
-        fetch(`includes/friend_action.inc.php?friend_id=${friendId}&action=${action}`)
-            .then(res => res.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    location.reload(); 
-                } else {
-                    alert(data.message);
-                }
-            })
-            .catch(err => console.error('Error:', err));
-    }
+    // --- 看板 Modal 控制 ---
+    const catModal = document.getElementById('categoryModal');
+    const openBtn = document.getElementById('openCategories');
+    const closeBtn = document.getElementById('closeModal');
+    if(openBtn) openBtn.onclick = () => catModal.style.display = 'flex';
+    if(closeBtn) closeBtn.onclick = () => catModal.style.display = 'none';
+    window.onclick = (e) => { if (e.target == catModal) catModal.style.display = 'none'; };
 </script>
 </body>
 </html>

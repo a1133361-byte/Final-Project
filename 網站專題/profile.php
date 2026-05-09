@@ -34,6 +34,18 @@ try {
         }
     }
 
+    // 3. 取得該用戶的發文總數
+    $sql_count = "SELECT COUNT(*) FROM posts WHERE user_id = ?";
+    $stmt_count = $pdo->prepare($sql_count);
+    $stmt_count->execute([$profile_id]);
+    $post_count = $stmt_count->fetchColumn();
+
+    // 4. 取得該用戶寫過的文章列表
+    $sql_posts = "SELECT id, title, created_at FROM posts WHERE user_id = ? ORDER BY created_at DESC";
+    $stmt_posts = $pdo->prepare($sql_posts);
+    $stmt_posts->execute([$profile_id]);
+    $user_posts = $stmt_posts->fetchAll();
+
 } catch (PDOException $e) {
     die("資料庫錯誤: " . $e->getMessage());
 }
@@ -98,7 +110,7 @@ try {
         .user-link { display: flex; align-items: center; gap: 10px; padding: 5px 15px; background: rgba(255, 255, 255, 0.1); border-radius: 50px; }
         .nav-avatar-img { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; }
 
-        .main-container { max-width: 600px; margin: 50px auto; padding: 0 20px; }
+        .main-container { max-width: 650px; margin: 50px auto; padding: 0 20px; }
 
         .profile-card {
             background: var(--card-bg);
@@ -124,29 +136,53 @@ try {
 
         .bio-box {
             background-color: var(--bg-color); border-radius: 12px;
-            padding: 20px; margin: 20px 0; min-height: 100px;
+            padding: 20px; margin: 20px 0; min-height: 80px;
             border: 1px dashed var(--border-color);
         }
 
         .bio-text { color: var(--text-muted); font-style: italic; line-height: 1.6; margin: 0; }
 
+        /* --- 新增：統計與文章列表樣式 --- */
+        .user-stats {
+            display: flex; justify-content: center; gap: 40px;
+            margin: 20px 0; padding: 15px 0;
+            border-top: 1px solid var(--border-color);
+            border-bottom: 1px solid var(--border-color);
+        }
+        .stat-item { text-align: center; }
+        .stat-value { display: block; font-size: 1.5rem; font-weight: bold; color: #764ba2; }
+        .stat-label { font-size: 0.9rem; color: var(--text-muted); }
+
+        .user-posts-section { margin-top: 40px; text-align: left; }
+        .section-title { font-size: 1.2rem; margin-bottom: 15px; border-left: 4px solid #764ba2; padding-left: 10px; color: var(--text-color); }
+        
+        .post-item {
+            background: var(--bg-color);
+            padding: 15px; border-radius: 12px; margin-bottom: 12px;
+            display: flex; justify-content: space-between; align-items: center;
+            text-decoration: none; color: inherit; transition: 0.3s;
+            border: 1px solid transparent;
+        }
+        .post-item:hover {
+            transform: translateY(-3px);
+            border-color: #667eea;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        .post-info h3 { margin: 0 0 5px 0; font-size: 1rem; color: var(--text-color); }
+        .post-date { font-size: 0.8rem; color: var(--text-muted); }
+        .arrow { color: #667eea; font-weight: bold; }
+        /* ---------------------------- */
+
         .btn-action {
-            display: inline-block;
-            padding: 12px 30px;
-            border-radius: 30px;
-            font-weight: bold;
-            transition: 0.3s;
-            text-decoration: none;
-            border: none;
-            cursor: pointer;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            margin: 5px;
-            font-size: 1rem;
+            display: inline-block; padding: 12px 30px; border-radius: 30px;
+            font-weight: bold; transition: 0.3s; text-decoration: none;
+            border: none; cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            margin: 5px; font-size: 1rem;
         }
         .btn-edit { background: linear-gradient(to right, #667eea, #764ba2); color: white; }
         .btn-friend-none { background: linear-gradient(to right, #667eea, #764ba2); color: white; }
         .btn-friend-pending { background: #636e72; color: white; }
-        .btn-friend-accepted { background: #e74c3c; color: white; } /* 顯示刪除好友 */
+        .btn-friend-accepted { background: #e74c3c; color: white; } 
     </style>
 </head>
 <body>
@@ -191,6 +227,14 @@ try {
             </p>
         </div>
 
+        <!-- 統計數據 -->
+        <div class="user-stats">
+            <div class="stat-item">
+                <span class="stat-value"><?= $post_count ?></span>
+                <span class="stat-label">發文總數</span>
+            </div>
+        </div>
+
         <div class="action-buttons">
             <?php if (isset($_SESSION["user_id"])): ?>
                 <?php if ($_SESSION["user_id"] == $profile_id): ?>
@@ -205,6 +249,24 @@ try {
                         ?>
                     </button>
                 <?php endif; ?>
+            <?php endif; ?>
+        </div>
+
+        <!-- 文章列表區 -->
+        <div class="user-posts-section">
+            <h2 class="section-title">最近發布的文章</h2>
+            <?php if (empty($user_posts)): ?>
+                <p style="color: var(--text-muted); text-align: center; padding: 20px;">目前還沒有發布過任何文章。</p>
+            <?php else: ?>
+                <?php foreach ($user_posts as $post): ?>
+                    <a href="view_post.php?id=<?= $post['id'] ?>" class="post-item">
+                        <div class="post-info">
+                            <h3><?= htmlspecialchars($post['title']) ?></h3>
+                            <span class="post-date">📅 <?= date("Y-m-d", strtotime($post['created_at'])) ?></span>
+                        </div>
+                        <div class="arrow">➜</div>
+                    </a>
+                <?php endforeach; ?>
             <?php endif; ?>
         </div>
     </div>
@@ -237,7 +299,6 @@ try {
         const friendId = <?= $profile_id ?>;
         const currentStatus = this.getAttribute('data-status');
 
-        // 調用後端邏輯
         fetch(`includes/friend_action.inc.php?friend_id=${friendId}&action=toggle`)
             .then(res => res.json())
             .then(data => {
