@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- 主機： 127.0.0.1
--- 產生時間： 2026-05-09 10:00:49
+-- 產生時間： 2026-05-09 14:47:38
 -- 伺服器版本： 10.4.32-MariaDB
 -- PHP 版本： 8.2.12
 
@@ -226,6 +226,31 @@ INSERT INTO `post_images` (`id`, `post_id`, `image_path`) VALUES
 -- --------------------------------------------------------
 
 --
+-- 資料表結構 `reports`
+--
+
+CREATE TABLE `reports` (
+  `id` int(11) NOT NULL,
+  `post_id` int(11) NOT NULL,
+  `user_id` int(11) NOT NULL,
+  `reason` text NOT NULL,
+  `status` int(11) DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- 傾印資料表的資料 `reports`
+--
+
+INSERT INTO `reports` (`id`, `post_id`, `user_id`, `reason`, `status`, `created_at`) VALUES
+(1, 3, 6, '疑似詐騙', 0, '2026-05-09 12:06:12'),
+(2, 1, 6, '吃太多了', 0, '2026-05-09 12:23:25'),
+(3, 1, 6, '真的吃太多了', 0, '2026-05-09 12:27:29'),
+(4, 5, 6, '不認真上課', 0, '2026-05-09 12:31:24');
+
+-- --------------------------------------------------------
+
+--
 -- 資料表結構 `users`
 --
 
@@ -311,6 +336,14 @@ ALTER TABLE `post_images`
   ADD KEY `post_id` (`post_id`);
 
 --
+-- 資料表索引 `reports`
+--
+ALTER TABLE `reports`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `post_id` (`post_id`),
+  ADD KEY `user_id` (`user_id`);
+
+--
 -- 資料表索引 `users`
 --
 ALTER TABLE `users`
@@ -364,6 +397,12 @@ ALTER TABLE `post_images`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
+-- 使用資料表自動遞增(AUTO_INCREMENT) `reports`
+--
+ALTER TABLE `reports`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+
+--
 -- 使用資料表自動遞增(AUTO_INCREMENT) `users`
 --
 ALTER TABLE `users`
@@ -405,6 +444,13 @@ ALTER TABLE `messages`
 --
 ALTER TABLE `post_images`
   ADD CONSTRAINT `post_images_ibfk_1` FOREIGN KEY (`post_id`) REFERENCES `posts` (`id`) ON DELETE CASCADE;
+
+--
+-- 資料表的限制式 `reports`
+--
+ALTER TABLE `reports`
+  ADD CONSTRAINT `reports_ibfk_1` FOREIGN KEY (`post_id`) REFERENCES `posts` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `reports_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

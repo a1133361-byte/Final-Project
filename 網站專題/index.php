@@ -12,6 +12,19 @@ $isAdmin = isset($_SESSION['role']) && $_SESSION['role'] == 1;
 $currentCatName = "所有文章";
 $currentCatDesc = "探索社群中的最新動態與深度討論。";
 
+// --- 新增：管理員檢舉通知邏輯 ---
+$pendingReportsCount = 0;
+if ($isAdmin) {
+    try {
+        // 假設 reports 表中有一個 status 欄位，0 代表未處理
+        $report_sql = "SELECT COUNT(*) FROM reports WHERE status = 0";
+        $report_stmt = $pdo->query($report_sql);
+        $pendingReportsCount = $report_stmt->fetchColumn();
+    } catch (PDOException $e) {
+        // 靜默失敗或記錄日誌
+    }
+}
+
 try {
     $cat_query = $pdo->query("SELECT * FROM categories ORDER BY id ASC");
     $all_categories = $cat_query->fetchAll();
@@ -42,19 +55,20 @@ try {
         $currentCatDesc = "看看你的好友們最近在忙些什麼。";
         $placeholders = implode(',', array_fill(0, count($friend_ids), '?'));
         
+        // 修改：這裡將 type 改為中文，並確保 created_at 被選取
         $activity_sql = "
-            (SELECT 'post' as type, p.id as target_id, p.title as title, p.content as content, p.created_at, u.username, u.profile_img 
+            (SELECT '發布了文章' as type_cn, 'post' as type, p.id as target_id, p.title as title, p.content as content, p.created_at, u.username, u.profile_img 
              FROM posts p 
              JOIN users u ON p.user_id = u.id 
              WHERE p.user_id IN ($placeholders))
             UNION ALL
-            (SELECT 'comment' as type, p.id as target_id, p.title as title, com.content as content, com.created_at, u.username, u.profile_img 
+            (SELECT '發表了評論' as type_cn, 'comment' as type, p.id as target_id, p.title as title, com.content as content, com.created_at, u.username, u.profile_img 
              FROM comments com
              JOIN posts p ON com.post_id = p.id
              JOIN users u ON com.user_id = u.id
              WHERE com.user_id IN ($placeholders))
             UNION ALL
-            (SELECT 'like' as type, p.id as target_id, p.title as title, '對這篇文章點了個讚' as content, l.created_at, u.username, u.profile_img 
+            (SELECT '點了個讚' as type_cn, 'like' as type, p.id as target_id, p.title as title, '對這篇文章點了個讚' as content, l.created_at, u.username, u.profile_img 
              FROM likes l
              JOIN posts p ON l.post_id = p.id
              JOIN users u ON l.user_id = u.id
@@ -103,6 +117,7 @@ try {
             --sidebar-item-hover: #f1f5f9;
             --admin-color: #f59e0b;
             --admin-soft: rgba(245, 158, 11, 0.1);
+            --danger-color: #ef4444;
         }
 
         [data-theme="dark"] {
@@ -125,7 +140,6 @@ try {
             transition: background-color 0.3s, color 0.3s; 
         }
 
-        /* --- Header & Dropdown --- */
         header { 
             background: var(--nav-bg); 
             backdrop-filter: blur(10px); 
@@ -140,10 +154,28 @@ try {
         .logo h1 { margin: 0; font-size: 1.4rem; font-weight: 800; background: var(--header-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
 
         .user-trigger { 
-            display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 5px 12px; border-radius: 50px; transition: 0.2s; 
+            display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 5px 12px; border-radius: 50px; transition: 0.2s; position: relative;
         }
         .user-trigger:hover { background: var(--sidebar-item-hover); }
         .user-trigger span { font-weight: 700; font-size: 0.95rem; }
+
+        /* 通知紅點樣式 */
+        .notification-badge {
+            position: absolute;
+            top: -2px;
+            right: -2px;
+            background: var(--danger-color);
+            color: white;
+            font-size: 0.65rem;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border: 2px solid var(--card-bg);
+            font-weight: 800;
+        }
 
         .dropdown-menu { 
             position: absolute; 
@@ -168,6 +200,9 @@ try {
             font-size: 0.9rem; 
             transition: 0.2s; 
             border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
         .dropdown-menu a:last-child { border-bottom: none; }
         .dropdown-menu a:hover { background: var(--sidebar-item-hover); color: var(--accent-color); }
@@ -175,7 +210,6 @@ try {
         .admin-link { color: var(--admin-color) !important; background: var(--admin-soft); }
         .admin-link:hover { background: var(--admin-color) !important; color: white !important; }
 
-        /* --- Main Layout --- */
         .main-wrapper { max-width: 1400px; margin: 20px auto; padding: 0 25px; display: grid; grid-template-columns: 260px 1fr 300px; gap: 30px; }
 
         .left-sidebar { position: sticky; top: 90px; height: fit-content; }
@@ -190,15 +224,27 @@ try {
         .menu-btn:hover, .menu-link:hover { background: var(--sidebar-item-hover); color: var(--accent-color); }
         .menu-btn.active, .menu-link.active { background: var(--accent-soft); color: var(--accent-color); border-color: rgba(99, 102, 241, 0.3); }
 
-        /* 管理員專用側邊欄樣式 */
         .admin-sidebar-item { border-left: 3px solid var(--admin-color) !important; }
+        .badge-inline { background: var(--danger-color); color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; margin-left: auto; }
 
-        /* --- 文章與內容卡片 --- */
         .category-header { background: var(--card-bg); padding: 30px; border-radius: 24px; border: 1px solid var(--border-color); margin-bottom: 25px; position: relative; overflow: hidden; transition: 0.3s; }
         .search-box { background: var(--card-bg); border: 2px solid var(--border-color); border-radius: 18px; padding: 5px 5px 5px 20px; display: flex; gap: 10px; transition: 0.3s; margin-bottom: 30px; }
         .search-box:focus-within { border-color: var(--accent-color); }
         .search-box input { flex: 1; border: none; background: transparent; color: var(--text-color); outline: none; }
         .search-box button { background: var(--accent-color); color: white; border: none; padding: 10px 20px; border-radius: 14px; cursor: pointer; font-weight: 700; }
+
+        .small-search-box { 
+            display: flex; 
+            background: var(--bg-color); 
+            border: 1px solid var(--border-color); 
+            border-radius: 12px; 
+            padding: 4px 4px 4px 12px; 
+            margin-bottom: 20px; 
+            transition: 0.2s;
+        }
+        .small-search-box:focus-within { border-color: var(--accent-color); box-shadow: 0 0 0 3px var(--accent-soft); }
+        .small-search-box input { border: none; background: transparent; color: var(--text-color); font-size: 0.85rem; outline: none; flex: 1; }
+        .small-search-box button { background: var(--accent-color); color: white; border: none; padding: 6px 12px; border-radius: 8px; font-size: 0.8rem; cursor: pointer; }
 
         .post-card, .activity-card { background: var(--card-bg); border-radius: 20px; padding: 25px; margin-bottom: 20px; border: 1px solid var(--border-color); transition: 0.3s; }
         .post-card:hover { transform: translateY(-3px); box-shadow: 0 10px 20px rgba(0,0,0,0.05); }
@@ -208,7 +254,6 @@ try {
         .tag-comment { background: #10b981; }
         .tag-like { background: #f43f5e; }
 
-        /* Modal */
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); backdrop-filter: blur(8px); display: none; justify-content: center; align-items: center; z-index: 2000; }
         .modal-content { background: var(--card-bg); width: 90%; max-width: 500px; padding: 30px; border-radius: 25px; border: 1px solid var(--border-color); }
 
@@ -227,6 +272,9 @@ try {
                     <div class="user-trigger" id="userTrigger">
                         <img src="<?= !empty($_SESSION['profile_img']) ? "uploads/users_profile_img/".$_SESSION['profile_img'] : "uploads/default_avatar.png" ?>" style="width:32px; height:32px; border-radius:50%; object-fit:cover; border: 2px solid <?= $isAdmin ? 'var(--admin-color)' : 'var(--accent-color)' ?>;">
                         <span style="<?= $isAdmin ? 'color: var(--admin-color);' : '' ?>"><?= htmlspecialchars($_SESSION["username"]) ?></span>
+                        <?php if ($isAdmin && $pendingReportsCount > 0): ?>
+                            <div class="notification-badge"><?= $pendingReportsCount ?></div>
+                        <?php endif; ?>
                     </div>
                     <div class="dropdown-menu" id="dropdownMenu">
                         <div style="padding: 10px 20px; font-size: 0.7rem; color: var(--text-muted); font-weight: 800; text-transform: uppercase;">使用者功能</div>
@@ -235,7 +283,13 @@ try {
                         
                         <?php if ($isAdmin): ?>
                             <div style="padding: 10px 20px; font-size: 0.7rem; color: var(--admin-color); font-weight: 800; text-transform: uppercase; background: var(--admin-soft);">管理員功能</div>
-                            <a href="admin_categories.php" class="admin-link">🛠️ 看板管理 (新增看板)</a>
+                            <a href="admin_reports.php" class="admin-link">
+                                🚩 檢舉審核 
+                                <?php if($pendingReportsCount > 0): ?>
+                                    <span class="badge-inline"><?= $pendingReportsCount ?></span>
+                                <?php endif; ?>
+                            </a>
+                            <a href="admin_categories.php" class="admin-link">🛠️ 看板管理</a>
                             <a href="admin_dashboard.php" class="admin-link">📊 後台數據分析</a>
                         <?php endif; ?>
                         
@@ -262,6 +316,12 @@ try {
 
         <?php if ($isAdmin): ?>
             <div class="menu-label" style="color: var(--admin-color);">管理員專區</div>
+            <a href="admin_reports.php" class="menu-link admin-sidebar-item">
+                🚩 檢舉案件審理
+                <?php if($pendingReportsCount > 0): ?>
+                    <span class="badge-inline"><?= $pendingReportsCount ?></span>
+                <?php endif; ?>
+            </a>
             <a href="admin_categories.php" class="menu-link admin-sidebar-item">🛠️ 新增/編輯看板</a>
             <a href="admin_dashboard.php" class="menu-link admin-sidebar-item">📈 查看網站數據</a>
         <?php endif; ?>
@@ -289,21 +349,33 @@ try {
         <?php endif; ?>
 
         <?php if ($viewFriendsActivity): ?>
-            <!-- 好友動態內容 (省略以維持程式碼精簡) -->
             <?php if (count($activities) > 0): ?>
                 <?php foreach ($activities as $act): ?>
                     <div class="activity-card">
-                        <!-- 動態內容卡片渲染 -->
-                        <div style="display:flex; align-items:center; gap:12px; margin-bottom:15px;">
-                            <img src="<?= !empty($act['profile_img']) ? "uploads/users_profile_img/".$act['profile_img'] : "uploads/default_avatar.png" ?>" style="width:40px; height:40px; border-radius:50%; object-fit:cover;">
-                            <div>
-                                <span style="font-weight:800;"><?= htmlspecialchars($act['username']) ?></span>
-                                <span class="activity-tag tag-<?= $act['type'] ?>"><?= $act['type'] ?></span>
+                        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:15px;">
+                            <div style="display:flex; align-items:center; gap:12px;">
+                                <img src="<?= !empty($act['profile_img']) ? "uploads/users_profile_img/".$act['profile_img'] : "uploads/default_avatar.png" ?>" style="width:40px; height:40px; border-radius:50%; object-fit:cover;">
+                                <div>
+                                    <span style="font-weight:800;"><?= htmlspecialchars($act['username']) ?></span>
+                                    <!-- 修改：顯示中文動作類型 -->
+                                    <span class="activity-tag tag-<?= $act['type'] ?>"><?= $act['type_cn'] ?></span>
+                                </div>
                             </div>
+                            <!-- 修改：顯示活動時間 -->
+                            <span style="color:var(--text-muted); font-size:0.85rem;"><?= date('Y/m/d H:i', strtotime($act['created_at'])) ?></span>
                         </div>
-                        <p><?= htmlspecialchars(mb_substr(strip_tags($act['content']), 0, 80)) ?>...</p>
+                        <p style="margin-bottom: 5px; font-weight: 700; color: var(--text-color);">
+                            <a href="view_post.php?id=<?= $act['target_id'] ?>" style="text-decoration:none; color:inherit;">
+                                <?= htmlspecialchars($act['title']) ?>
+                            </a>
+                        </p>
+                        <p style="color:var(--text-muted); line-height:1.5; margin: 0;"><?= htmlspecialchars(mb_substr(strip_tags($act['content']), 0, 80)) ?>...</p>
                     </div>
                 <?php endforeach; ?>
+            <?php else: ?>
+                <div class="activity-card" style="text-align: center; padding: 50px;">
+                    <p style="color:var(--text-muted);">目前還沒有好友的動態資訊。</p>
+                </div>
             <?php endif; ?>
         <?php else: ?>
             <?php foreach ($posts as $post): ?>
@@ -322,6 +394,15 @@ try {
     </main>
 
     <aside class="right-sidebar">
+        <div style="background:var(--card-bg); padding:25px; border-radius:24px; border:1px solid var(--border-color); margin-bottom:20px;">
+            <h3 style="margin-top:0; font-size:1.1rem; margin-bottom:15px;">🔍 尋找用戶</h3>
+            <form action="search_users.php" method="GET" class="small-search-box">
+                <input type="text" name="u_search" placeholder="輸入用戶名..." required>
+                <button type="submit">搜尋</button>
+            </form>
+            <p style="font-size:0.75rem; color:var(--text-muted); margin:0;">想找新朋友？輸入名字試試吧！</p>
+        </div>
+
         <div style="background:var(--card-bg); padding:25px; border-radius:24px; border:1px solid var(--border-color);">
             <h3 style="margin-top:0; font-size:1.1rem;">🤝 在線好友</h3>
             <div style="display:flex; flex-direction:column; gap:15px;">
@@ -343,7 +424,6 @@ try {
     </aside>
 </div>
 
-<!-- 分類 Modal -->
 <div class="modal-overlay" id="categoryModal">
     <div class="modal-content">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
@@ -361,7 +441,6 @@ try {
 </div>
 
 <script>
-    // --- 主題切換控制 ---
     const themeBtn = document.getElementById('themeBtn');
     const currentTheme = localStorage.getItem('theme') || 'light';
     document.body.setAttribute('data-theme', currentTheme);
@@ -372,7 +451,6 @@ try {
         localStorage.setItem('theme', targetTheme);
     };
 
-    // --- 下拉選單控制 ---
     const userTrigger = document.getElementById('userTrigger');
     const dropdownMenu = document.getElementById('dropdownMenu');
     
@@ -383,13 +461,12 @@ try {
         };
         
         document.addEventListener('click', (e) => {
-            if (!userTrigger.contains(e.target)) {
+            if (userTrigger && !userTrigger.contains(e.target)) {
                 dropdownMenu.classList.remove('active');
             }
         });
     }
 
-    // --- 看板 Modal 控制 ---
     const catModal = document.getElementById('categoryModal');
     const openBtn = document.getElementById('openCategories');
     const closeBtn = document.getElementById('closeModal');

@@ -229,19 +229,44 @@ function renderPostContent($content, $images) {
             display: flex; align-items: center; gap: 15px;
         }
 
-        /* Modal: 跟 index.php 一樣的模糊效果 */
+        /* Modal: 已移除模糊效果，確保輸入時極度順暢 */
         #reportModal {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.5); backdrop-filter: blur(8px);
             display: none; justify-content: center; align-items: center; z-index: 2000;
+        }
+        .modal-overlay {
+            position: absolute; top:0; left:0; width:100%; height:100%;
+            background: rgba(0,0,0,0.6); /* 使用純半透明黑色背景 */
+            z-index: -1; transition: opacity 0.3s;
         }
         .modal-content {
             background: var(--card-bg); padding: 30px; border-radius: 25px;
-            width: 90%; max-width: 450px; border: 1px solid var(--border-color);
+            width: 95%; max-width: 450px; border: 1px solid var(--border-color);
+            box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+            transform: scale(0.95); transition: transform 0.2s ease-out;
         }
+        #reportModal.active { display: flex; }
+        #reportModal.active .modal-content { transform: scale(1); }
+
+        /* Toast: 優美的提示通知 */
+        #toastContainer {
+            position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+            z-index: 9999; display: flex; flex-direction: column; gap: 10px; pointer-events: none;
+        }
+        .toast {
+            background: #10b981; color: white; padding: 12px 25px; border-radius: 50px;
+            font-weight: 700; box-shadow: 0 10px 20px rgba(16, 185, 129, 0.3);
+            display: flex; align-items: center; gap: 10px;
+            transform: translateY(-50px); opacity: 0; transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .toast.show { transform: translateY(0); opacity: 1; }
+        .toast.error { background: #ef4444; box-shadow: 0 10px 20px rgba(239, 68, 68, 0.3); }
     </style>
 </head>
 <body>
+
+<!-- 用於顯示優雅通知的容器 -->
+<div id="toastContainer"></div>
 
 <header>
     <div class="nav-container">
@@ -365,20 +390,46 @@ function renderPostContent($content, $images) {
     </section>
 </div>
 
+<!-- 檢舉 Modal -->
 <div id="reportModal">
+    <div class="modal-overlay" onclick="closeReport()"></div>
     <div class="modal-content">
         <h3 style="margin-top:0; font-weight:800;">🚩 檢舉此文章</h3>
         <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom:10px;">請敘述檢舉理由：</p>
         <textarea id="reportReason" style="width:100%; height:120px; border-radius:12px; border:2px solid var(--border-color); background:var(--bg-color); color:var(--text-color); padding:15px; box-sizing:border-box; outline:none; font-family:inherit;" placeholder="例如：內容包含不當言論..."></textarea>
         <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:20px;">
             <button style="background:var(--sidebar-item-hover); color:var(--text-color); border:none; padding:10px 20px; border-radius:10px; cursor:pointer; font-weight:700;" onclick="closeReport()">取消</button>
-            <button style="background:#ef4444; color:white; border:none; padding:10px 20px; border-radius:10px; cursor:pointer; font-weight:700;" onclick="submitReport()">送出檢舉</button>
+            <button id="submitReportBtn" style="background:#ef4444; color:white; border:none; padding:10px 20px; border-radius:10px; cursor:pointer; font-weight:700;" onclick="submitReport()">送出檢舉</button>
         </div>
     </div>
 </div>
 
 <script>
-    // Theme Control
+    /**
+     * 自定義 Toast 通知函數
+     * @param {string} message - 顯示內容
+     * @param {string} type - 'success' 或 'error'
+     */
+    function showToast(message, type = 'success') {
+        const container = document.getElementById('toastContainer');
+        const toast = document.createElement('div');
+        toast.className = `toast ${type === 'error' ? 'error' : ''}`;
+        
+        const icon = type === 'success' ? '✅' : '❌';
+        toast.innerHTML = `<span>${icon}</span> <span>${message}</span>`;
+        container.appendChild(toast);
+        
+        // 觸發進場動畫
+        setTimeout(() => toast.classList.add('show'), 10);
+        
+        // 3秒後移除
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    }
+
+    // 主題控制
     const themeBtn = document.getElementById('themeBtn');
     const currentTheme = localStorage.getItem('theme') || 'light';
     document.body.setAttribute('data-theme', currentTheme);
@@ -389,7 +440,7 @@ function renderPostContent($content, $images) {
         localStorage.setItem('theme', targetTheme);
     };
 
-    // Dropdown Control
+    // 下拉選單控制
     const userTrigger = document.getElementById('userTrigger');
     const dropdownMenu = document.getElementById('dropdownMenu');
     if(userTrigger) {
@@ -400,7 +451,7 @@ function renderPostContent($content, $images) {
         document.addEventListener('click', () => dropdownMenu.classList.remove('active'));
     }
 
-    // Like Ajax
+    // 按讚 AJAX
     document.getElementById('like-btn')?.addEventListener('click', function() {
         fetch('includes/like_ajax.inc.php?post_id=<?= $post_id ?>')
             .then(res => res.json())
@@ -412,13 +463,31 @@ function renderPostContent($content, $images) {
             }).catch(err => console.error("Error:", err));
     });
 
-    // Report Logic
-    function openReport() { document.getElementById('reportModal').style.display = 'flex'; }
-    function closeReport() { document.getElementById('reportModal').style.display = 'none'; }
+    // 檢舉邏輯
+    function openReport() { 
+        const modal = document.getElementById('reportModal');
+        modal.classList.add('active');
+        document.getElementById('reportReason').focus();
+    }
+    
+    function closeReport() { 
+        const modal = document.getElementById('reportModal');
+        modal.classList.remove('active');
+        document.getElementById('reportReason').value = ''; 
+    }
     
     function submitReport() {
+        const btn = document.getElementById('submitReportBtn');
         const reason = document.getElementById('reportReason').value.trim();
-        if (!reason) return alert('請填寫理由');
+        
+        if (!reason) {
+            showToast('請填寫檢舉理由', 'error');
+            return;
+        }
+        
+        btn.disabled = true;
+        btn.style.opacity = '0.5';
+        btn.innerText = '送出中...';
         
         fetch('includes/report_ajax.inc.php', {
             method: 'POST',
@@ -427,7 +496,22 @@ function renderPostContent($content, $images) {
         })
         .then(res => res.json())
         .then(data => {
-            if(data.status === 'success') { alert('已送出檢舉'); closeReport(); }
+            btn.disabled = false;
+            btn.style.opacity = '1';
+            btn.innerText = '送出檢舉';
+            
+            if(data.status === 'success') { 
+                showToast('已成功送出檢舉，感謝您的回報！');
+                closeReport(); 
+            } else {
+                showToast('發生錯誤：' + (data.message || '請稍後再試'), 'error');
+            }
+        })
+        .catch(err => {
+            btn.disabled = false;
+            btn.style.opacity = '1';
+            btn.innerText = '送出檢舉';
+            showToast('連線失敗，請檢查網路', 'error');
         });
     }
 </script>
