@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- 主機： 127.0.0.1
--- 產生時間： 2026-05-09 14:47:38
+-- 產生時間： 2026-05-10 05:24:09
 -- 伺服器版本： 10.4.32-MariaDB
 -- PHP 版本： 8.2.12
 
@@ -42,7 +42,8 @@ INSERT INTO `categories` (`id`, `name`, `description`) VALUES
 (2, '技術', '程式開發與電腦硬體討論'),
 (3, '美食', '全台各地美食推薦'),
 (4, '遊戲', '主機遊戲與手遊交流'),
-(6, '語言', NULL);
+(6, '語言', NULL),
+(7, '系統公告', NULL);
 
 -- --------------------------------------------------------
 
@@ -175,7 +176,12 @@ INSERT INTO `messages` (`id`, `sender_id`, `receiver_id`, `message`, `msg_type`,
 (26, 3, 4, 'IMG_20260425_062208_69ec4170d91d9.jpg', 'image', 0, '2026-04-25 04:22:08'),
 (27, 3, 4, 'IMG_20260425_062314_69ec41b2665b7.jpg', 'image', 0, '2026-04-25 04:23:14'),
 (28, 3, 4, 'IMG_20260425_062323_69ec41bb9704b.jpg', 'image', 0, '2026-04-25 04:23:23'),
-(29, 3, 4, 'IMG_20260425_062327_69ec41bf9ad04.jpg', 'image', 0, '2026-04-25 04:23:27');
+(29, 3, 4, 'IMG_20260425_062327_69ec41bf9ad04.jpg', 'image', 0, '2026-04-25 04:23:27'),
+(30, 1, 3, '123', 'text', 0, '2026-05-10 03:17:04'),
+(31, 1, 3, 'aaaa', 'text', 0, '2026-05-10 03:21:37'),
+(32, 1, 3, 'eee', 'text', 0, '2026-05-10 03:23:21'),
+(33, 1, 4, '123', 'text', 0, '2026-05-10 03:23:26'),
+(34, 1, 4, 'IMG_20260510_052331_69fffa334605e.jpg', 'image', 0, '2026-05-10 03:23:31');
 
 -- --------------------------------------------------------
 
@@ -201,7 +207,12 @@ INSERT INTO `posts` (`id`, `title`, `content`, `user_id`, `category_id`, `create
 (1, '八方雲集吃12顆鍋貼太多了嗎？', '如題，今天去買八方雲集。我女朋友吃8顆，我吃12顆。她就很認真的念我說12顆太多了！我覺得好無辜，我今天可是想吃15顆但忍下來了，沒想到還是被念...', 1, 3, '2026-04-03 10:47:12', NULL),
 (3, '#徵友 徵人打遊戲', '我是I人 之前也很忙沒時間打遊戲\r\n也徵人很多次了 但大家都不是活人 都在潛水…\r\n希望不管是I人還是E人都能踴躍一點加入\r\n我玩的是猛獸 迷媚 REPO  蓋瑞模組 致命公司\r\novercooked（幾代忘了）幻獸帕魯 高爾夫球\r\n還有想買的多人遊戲 可以一起討論～～\r\n遊玩時間 我目前都可以\r\n但之後可能都要晚上10.30以後\r\n歡迎私訊我 有加過我的潛水的先不用了 謝謝🥲', 3, 4, '2026-04-05 15:11:03', NULL),
 (4, '有人可以教我怎麼關機嗎?', '我第一次使用電腦，現在我不知道要按什麼才關機', 1, 2, '2026-04-05 17:10:22', NULL),
-(5, '這題法律怎麼寫???', '第一張投影片\r\n[img1]\r\n第二章投影片\r\n[img2]\r\n請各位大大教我!!!\r\n[img3]\r\n', 1, 2, '2026-04-19 14:06:08', NULL);
+(5, '這題法律怎麼寫???', '第一張投影片\r\n[img1]\r\n第二章投影片\r\n[img2]\r\n請各位大大教我!!!\r\n[img3]\r\n', 1, 2, '2026-04-19 14:06:08', NULL),
+(6, '你各位要拿捏好分寸', '不要對他人有言語霸凌的舉動', 6, 7, '2026-05-10 10:32:11', NULL),
+(7, '測試', '功能測試', 6, 7, '2026-05-10 10:42:10', NULL),
+(8, '測試2', '123', 6, 7, '2026-05-10 10:45:07', NULL),
+(9, '123', '3333', 6, 7, '2026-05-10 10:48:20', NULL),
+(10, '無題', '測試', 6, 7, '2026-05-10 10:53:23', NULL);
 
 -- --------------------------------------------------------
 
@@ -246,7 +257,7 @@ INSERT INTO `reports` (`id`, `post_id`, `user_id`, `reason`, `status`, `created_
 (1, 3, 6, '疑似詐騙', 0, '2026-05-09 12:06:12'),
 (2, 1, 6, '吃太多了', 0, '2026-05-09 12:23:25'),
 (3, 1, 6, '真的吃太多了', 0, '2026-05-09 12:27:29'),
-(4, 5, 6, '不認真上課', 0, '2026-05-09 12:31:24');
+(4, 5, 6, '不認真上課', 1, '2026-05-09 12:31:24');
 
 -- --------------------------------------------------------
 
@@ -262,19 +273,20 @@ CREATE TABLE `users` (
   `email` varchar(100) NOT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `bio` text DEFAULT NULL,
-  `profile_img` varchar(255) DEFAULT 'default_avatar.png'
+  `profile_img` varchar(255) DEFAULT 'default_avatar.png',
+  `last_announcement_view` datetime DEFAULT '1970-01-01 00:00:00'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
 -- 傾印資料表的資料 `users`
 --
 
-INSERT INTO `users` (`id`, `username`, `password`, `role`, `email`, `created_at`, `bio`, `profile_img`) VALUES
-(1, 'hotdog', '$2y$10$HWl.ASd.sOwQqHECMoZI7uk4SI0THwWRF9O48r1G6jaeDnAPabHji', 0, 'a0903291833@gmail.com', '2026-04-02 20:36:06', '喜愛小動物和運動', 'avatar_1_69d218dec8c460.27607006.jpg'),
-(3, 'cookieCat', '$2y$10$2hw6yTyFEv3dilv8UJRMS.XujyJ5y35GAuDcnUwjIh00rngA9nE8O', 0, 'a1133361@mail.nuk.edu.tw', '2026-04-03 16:23:23', '我絕對不會神機錯亂!!!我是會站上夜城頂端的男人!!!', 'avatar_3_69d21a720ba343.42845887.jpg'),
-(4, 'Python', '$2y$10$xN3HYWlwY.SsP4ZSn54YC.Nivw2NGN3LUo6F.dtB6ypZsoUg6v8E.', 0, 'aaa0903291833@gmail.com', '2026-04-19 14:25:59', '', 'avatar_4_69e475b8402588.22933674.jpg'),
-(5, 'Ice', '$2y$10$gDl4YfB6HiSKi3wFvM08gOjgKu9737dREQCCGxmKmazU4MmSysKiy', 0, 'aaaa0903291833@gmail.com', '2026-04-25 11:29:15', NULL, 'default_avatar.png'),
-(6, '老大', '$2y$10$td3eU4Nv7djvqJFl2m/l1eiX34yy0cydMD4dxtYjyP6XcU4jlCG8S', 1, 'a1133361@mail.nuk.edu.tw', '2026-05-09 15:38:54', NULL, 'default_avatar.png');
+INSERT INTO `users` (`id`, `username`, `password`, `role`, `email`, `created_at`, `bio`, `profile_img`, `last_announcement_view`) VALUES
+(1, 'hotdog', '$2y$10$HWl.ASd.sOwQqHECMoZI7uk4SI0THwWRF9O48r1G6jaeDnAPabHji', 0, 'a0903291833@gmail.com', '2026-04-02 20:36:06', '喜愛小動物和運動', 'avatar_1_69d218dec8c460.27607006.jpg', '1970-01-01 00:00:00'),
+(3, 'cookieCat', '$2y$10$2hw6yTyFEv3dilv8UJRMS.XujyJ5y35GAuDcnUwjIh00rngA9nE8O', 0, 'a1133361@mail.nuk.edu.tw', '2026-04-03 16:23:23', '我絕對不會神機錯亂!!!我是會站上夜城頂端的男人!!!', 'avatar_3_69d21a720ba343.42845887.jpg', '1970-01-01 00:00:00'),
+(4, 'Python', '$2y$10$xN3HYWlwY.SsP4ZSn54YC.Nivw2NGN3LUo6F.dtB6ypZsoUg6v8E.', 0, 'aaa0903291833@gmail.com', '2026-04-19 14:25:59', '', 'avatar_4_69e475b8402588.22933674.jpg', '1970-01-01 00:00:00'),
+(5, 'Ice', '$2y$10$gDl4YfB6HiSKi3wFvM08gOjgKu9737dREQCCGxmKmazU4MmSysKiy', 0, 'aaaa0903291833@gmail.com', '2026-04-25 11:29:15', NULL, 'default_avatar.png', '1970-01-01 00:00:00'),
+(6, '老大', '$2y$10$td3eU4Nv7djvqJFl2m/l1eiX34yy0cydMD4dxtYjyP6XcU4jlCG8S', 1, 'a1133361@mail.nuk.edu.tw', '2026-05-09 15:38:54', NULL, 'default_avatar.png', '1970-01-01 00:00:00');
 
 --
 -- 已傾印資料表的索引
@@ -358,7 +370,7 @@ ALTER TABLE `users`
 -- 使用資料表自動遞增(AUTO_INCREMENT) `categories`
 --
 ALTER TABLE `categories`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
 
 --
 -- 使用資料表自動遞增(AUTO_INCREMENT) `comments`
@@ -382,13 +394,13 @@ ALTER TABLE `likes`
 -- 使用資料表自動遞增(AUTO_INCREMENT) `messages`
 --
 ALTER TABLE `messages`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=30;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=35;
 
 --
 -- 使用資料表自動遞增(AUTO_INCREMENT) `posts`
 --
 ALTER TABLE `posts`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
 
 --
 -- 使用資料表自動遞增(AUTO_INCREMENT) `post_images`

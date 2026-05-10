@@ -6,28 +6,53 @@ $searchTerm = isset($_GET['search']) ? trim($_GET['search']) : '';
 $catID = isset($_GET['category']) ? $_GET['category'] : '';
 $viewFriendsActivity = isset($_GET['view']) && $_GET['view'] === 'friends_activity';
 
-// 判斷是否為管理員 (假設 role = 1 是管理者)
+// 判斷是否為管理員
 $isAdmin = isset($_SESSION['role']) && $_SESSION['role'] == 1;
 
 $currentCatName = "所有文章";
 $currentCatDesc = "探索社群中的最新動態與深度討論。";
 
-// --- 新增：管理員檢舉通知邏輯 ---
+// --- 初始化計數器 ---
 $pendingReportsCount = 0;
-if ($isAdmin) {
+$unreadAnnouncementsCount = 0;
+
+if (isset($_SESSION['user_id'])) {
+    $uid = $_SESSION['user_id'];
     try {
-        // 假設 reports 表中有一個 status 欄位，0 代表未處理
-        $report_sql = "SELECT COUNT(*) FROM reports WHERE status = 0";
-        $report_stmt = $pdo->query($report_sql);
-        $pendingReportsCount = $report_stmt->fetchColumn();
+        // 1. 管理員檢舉通知邏輯
+        if ($isAdmin) {
+            $report_sql = "SELECT COUNT(*) FROM reports WHERE status = 0";
+            $report_stmt = $pdo->query($report_sql);
+            $pendingReportsCount = (int)$report_stmt->fetchColumn();
+        }
+
+        // 2. 未讀公告通知邏輯 (確保欄位 NULL 時也能運作)
+        $unread_sql = "SELECT COUNT(*) FROM announcements 
+                       WHERE created_at > (
+                           SELECT IFNULL(last_announcement_view, '1970-01-01 00:00:00') 
+                           FROM users WHERE id = ?
+                       )";
+        $unread_stmt = $pdo->prepare($unread_sql);
+        $unread_stmt->execute([$uid]);
+        $unreadAnnouncementsCount = (int)$unread_stmt->fetchColumn();
+        
     } catch (PDOException $e) {
-        // 靜默失敗或記錄日誌
+        // 靜默錯誤
     }
 }
 
 try {
     $cat_query = $pdo->query("SELECT * FROM categories ORDER BY id ASC");
     $all_categories = $cat_query->fetchAll();
+
+    // 找出系統公告的 ID (假設名稱為系統公告)
+    $announcementCatID = null;
+    foreach ($all_categories as $cat) {
+        if ($cat['name'] == '系統公告') {
+            $announcementCatID = $cat['id'];
+            break;
+        }
+    }
 
     if ($catID !== '') {
         foreach ($all_categories as $cat) {
@@ -42,10 +67,9 @@ try {
     $my_friends = [];
     $friend_ids = [];
     if (isset($_SESSION['user_id'])) {
-        $uid = $_SESSION['user_id'];
         $f_sql = "SELECT users.id, users.username, users.profile_img FROM friends JOIN users ON friends.friend_id = users.id WHERE friends.user_id = ? AND friends.status = 'accepted' LIMIT 10";
         $f_stmt = $pdo->prepare($f_sql);
-        $f_stmt->execute([$uid]);
+        $f_stmt->execute([$_SESSION['user_id']]);
         $my_friends = $f_stmt->fetchAll();
         $friend_ids = array_column($my_friends, 'id');
     }
@@ -55,7 +79,6 @@ try {
         $currentCatDesc = "看看你的好友們最近在忙些什麼。";
         $placeholders = implode(',', array_fill(0, count($friend_ids), '?'));
         
-        // 修改：這裡將 type 改為中文，並確保 created_at 被選取
         $activity_sql = "
             (SELECT '發布了文章' as type_cn, 'post' as type, p.id as target_id, p.title as title, p.content as content, p.created_at, u.username, u.profile_img 
              FROM posts p 
@@ -159,7 +182,6 @@ try {
         .user-trigger:hover { background: var(--sidebar-item-hover); }
         .user-trigger span { font-weight: 700; font-size: 0.95rem; }
 
-        /* 通知紅點樣式 */
         .notification-badge {
             position: absolute;
             top: -2px;
@@ -167,14 +189,16 @@ try {
             background: var(--danger-color);
             color: white;
             font-size: 0.65rem;
-            width: 18px;
+            min-width: 18px;
             height: 18px;
-            border-radius: 50%;
+            padding: 0 4px;
+            border-radius: 10px;
             display: flex;
             justify-content: center;
             align-items: center;
             border: 2px solid var(--card-bg);
             font-weight: 800;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
 
         .dropdown-menu { 
@@ -225,7 +249,7 @@ try {
         .menu-btn.active, .menu-link.active { background: var(--accent-soft); color: var(--accent-color); border-color: rgba(99, 102, 241, 0.3); }
 
         .admin-sidebar-item { border-left: 3px solid var(--admin-color) !important; }
-        .badge-inline { background: var(--danger-color); color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; margin-left: auto; }
+        .badge-inline { background: var(--danger-color); color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; margin-left: auto; font-weight: 800; }
 
         .category-header { background: var(--card-bg); padding: 30px; border-radius: 24px; border: 1px solid var(--border-color); margin-bottom: 25px; position: relative; overflow: hidden; transition: 0.3s; }
         .search-box { background: var(--card-bg); border: 2px solid var(--border-color); border-radius: 18px; padding: 5px 5px 5px 20px; display: flex; gap: 10px; transition: 0.3s; margin-bottom: 30px; }
@@ -233,28 +257,10 @@ try {
         .search-box input { flex: 1; border: none; background: transparent; color: var(--text-color); outline: none; }
         .search-box button { background: var(--accent-color); color: white; border: none; padding: 10px 20px; border-radius: 14px; cursor: pointer; font-weight: 700; }
 
-        .small-search-box { 
-            display: flex; 
-            background: var(--bg-color); 
-            border: 1px solid var(--border-color); 
-            border-radius: 12px; 
-            padding: 4px 4px 4px 12px; 
-            margin-bottom: 20px; 
-            transition: 0.2s;
-        }
-        .small-search-box:focus-within { border-color: var(--accent-color); box-shadow: 0 0 0 3px var(--accent-soft); }
-        .small-search-box input { border: none; background: transparent; color: var(--text-color); font-size: 0.85rem; outline: none; flex: 1; }
-        .small-search-box button { background: var(--accent-color); color: white; border: none; padding: 6px 12px; border-radius: 8px; font-size: 0.8rem; cursor: pointer; }
-
         .post-card, .activity-card { background: var(--card-bg); border-radius: 20px; padding: 25px; margin-bottom: 20px; border: 1px solid var(--border-color); transition: 0.3s; }
         .post-card:hover { transform: translateY(-3px); box-shadow: 0 10px 20px rgba(0,0,0,0.05); }
 
-        .activity-tag { font-size: 0.7rem; font-weight: 800; padding: 3px 8px; border-radius: 6px; color: white; }
-        .tag-post { background: #6366f1; }
-        .tag-comment { background: #10b981; }
-        .tag-like { background: #f43f5e; }
-
-        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); backdrop-filter: blur(8px); display: none; justify-content: center; align-items: center; z-index: 2000; }
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 2000; }
         .modal-content { background: var(--card-bg); width: 90%; max-width: 500px; padding: 30px; border-radius: 25px; border: 1px solid var(--border-color); }
 
         @media (max-width: 1100px) { .main-wrapper { grid-template-columns: 1fr 300px; } .left-sidebar { display: none; } }
@@ -272,17 +278,27 @@ try {
                     <div class="user-trigger" id="userTrigger">
                         <img src="<?= !empty($_SESSION['profile_img']) ? "uploads/users_profile_img/".$_SESSION['profile_img'] : "uploads/default_avatar.png" ?>" style="width:32px; height:32px; border-radius:50%; object-fit:cover; border: 2px solid <?= $isAdmin ? 'var(--admin-color)' : 'var(--accent-color)' ?>;">
                         <span style="<?= $isAdmin ? 'color: var(--admin-color);' : '' ?>"><?= htmlspecialchars($_SESSION["username"]) ?></span>
-                        <?php if ($isAdmin && $pendingReportsCount > 0): ?>
-                            <div class="notification-badge"><?= $pendingReportsCount ?></div>
+                        <?php 
+                        $totalNotif = $unreadAnnouncementsCount + ($isAdmin ? $pendingReportsCount : 0);
+                        if ($totalNotif > 0): 
+                        ?>
+                            <div class="notification-badge"><?= $totalNotif ?></div>
                         <?php endif; ?>
                     </div>
                     <div class="dropdown-menu" id="dropdownMenu">
                         <div style="padding: 10px 20px; font-size: 0.7rem; color: var(--text-muted); font-weight: 800; text-transform: uppercase;">使用者功能</div>
                         <a href="profile.php?id=<?= $_SESSION['user_id'] ?>">👤 我的個人資料</a>
+                        <a href="view_announcements.php">
+                            📢 系統公告通知
+                            <?php if($unreadAnnouncementsCount > 0): ?>
+                                <span class="badge-inline"><?= $unreadAnnouncementsCount ?></span>
+                            <?php endif; ?>
+                        </a>
                         <a href="create_post.php">✍️ 撰寫新文章</a>
                         
                         <?php if ($isAdmin): ?>
                             <div style="padding: 10px 20px; font-size: 0.7rem; color: var(--admin-color); font-weight: 800; text-transform: uppercase; background: var(--admin-soft);">管理員功能</div>
+                            <a href="admin_announcement.php" class="admin-link">📢 發布系統公告</a>
                             <a href="admin_reports.php" class="admin-link">
                                 🚩 檢舉審核 
                                 <?php if($pendingReportsCount > 0): ?>
@@ -290,7 +306,6 @@ try {
                                 <?php endif; ?>
                             </a>
                             <a href="admin_categories.php" class="admin-link">🛠️ 看板管理</a>
-                            <a href="admin_dashboard.php" class="admin-link">📊 後台數據分析</a>
                         <?php endif; ?>
                         
                         <a href="logout.php" style="color:#ef4444; font-weight:700;">🚪 登出系統</a>
@@ -314,20 +329,35 @@ try {
         
         <button class="menu-btn" id="openCategories">📂 所有看板</button>
 
+        <!-- 將系統公告獨立出來，放在主選單下面 -->
+        <?php if($announcementCatID): ?>
+            <a href="index.php?category=<?= $announcementCatID ?>" class="menu-link <?= ($catID == $announcementCatID) ? 'active' : '' ?>">
+                📢 系統公告
+                <?php if($unreadAnnouncementsCount > 0): ?>
+                    <span class="badge-inline"><?= $unreadAnnouncementsCount ?></span>
+                <?php endif; ?>
+            </a>
+        <?php endif; ?>
+
         <?php if ($isAdmin): ?>
             <div class="menu-label" style="color: var(--admin-color);">管理員專區</div>
             <a href="admin_reports.php" class="menu-link admin-sidebar-item">
-                🚩 檢舉案件審理
+                🚩 檢舉審理
                 <?php if($pendingReportsCount > 0): ?>
                     <span class="badge-inline"><?= $pendingReportsCount ?></span>
                 <?php endif; ?>
             </a>
-            <a href="admin_categories.php" class="menu-link admin-sidebar-item">🛠️ 新增/編輯看板</a>
-            <a href="admin_dashboard.php" class="menu-link admin-sidebar-item">📈 查看網站數據</a>
         <?php endif; ?>
         
-        <div class="menu-label">常用分類</div>
-        <?php foreach (array_slice($all_categories, 0, 6) as $cat): ?>
+        <div class="menu-label">常用分類看板</div>
+        <?php 
+        $displayCount = 0;
+        foreach ($all_categories as $cat): 
+            // 如果是系統公告看板，則在常用分類清單中跳過（因為上面已經獨立顯示了）
+            if($cat['name'] == '系統公告') continue;
+            if($displayCount >= 8) break;
+            $displayCount++;
+        ?>
             <a href="index.php?category=<?= $cat['id'] ?>" class="menu-link <?= ($catID == $cat['id']) ? 'active' : '' ?>">
                 # <?= htmlspecialchars($cat['name']) ?>
             </a>
@@ -336,8 +366,8 @@ try {
 
     <main>
         <div class="category-header">
-            <h2 style="margin:0; position:relative; z-index:1;"><?= ($viewFriendsActivity) ? '✨ ' : (($catID == '') ? '🌏 ' : '📂 ') ?><?= htmlspecialchars($currentCatName) ?></h2>
-            <p style="margin:10px 0 0 0; color:var(--text-muted); position:relative; z-index:1;"><?= htmlspecialchars($currentCatDesc) ?></p>
+            <h2 style="margin:0;"><?= ($viewFriendsActivity) ? '✨ ' : (($catID == '') ? '🌏 ' : (($currentCatName == '系統公告') ? '📢 ' : '📂 ')) ?><?= htmlspecialchars($currentCatName) ?></h2>
+            <p style="margin:10px 0 0 0; color:var(--text-muted);"><?= htmlspecialchars($currentCatDesc) ?></p>
         </div>
 
         <?php if(!$viewFriendsActivity): ?>
@@ -357,14 +387,12 @@ try {
                                 <img src="<?= !empty($act['profile_img']) ? "uploads/users_profile_img/".$act['profile_img'] : "uploads/default_avatar.png" ?>" style="width:40px; height:40px; border-radius:50%; object-fit:cover;">
                                 <div>
                                     <span style="font-weight:800;"><?= htmlspecialchars($act['username']) ?></span>
-                                    <!-- 修改：顯示中文動作類型 -->
                                     <span class="activity-tag tag-<?= $act['type'] ?>"><?= $act['type_cn'] ?></span>
                                 </div>
                             </div>
-                            <!-- 修改：顯示活動時間 -->
                             <span style="color:var(--text-muted); font-size:0.85rem;"><?= date('Y/m/d H:i', strtotime($act['created_at'])) ?></span>
                         </div>
-                        <p style="margin-bottom: 5px; font-weight: 700; color: var(--text-color);">
+                        <p style="margin-bottom: 5px; font-weight: 700;">
                             <a href="view_post.php?id=<?= $act['target_id'] ?>" style="text-decoration:none; color:inherit;">
                                 <?= htmlspecialchars($act['title']) ?>
                             </a>
@@ -396,11 +424,10 @@ try {
     <aside class="right-sidebar">
         <div style="background:var(--card-bg); padding:25px; border-radius:24px; border:1px solid var(--border-color); margin-bottom:20px;">
             <h3 style="margin-top:0; font-size:1.1rem; margin-bottom:15px;">🔍 尋找用戶</h3>
-            <form action="search_users.php" method="GET" class="small-search-box">
-                <input type="text" name="u_search" placeholder="輸入用戶名..." required>
-                <button type="submit">搜尋</button>
+            <form action="search_users.php" method="GET" class="small-search-box" style="display:flex; background:var(--bg-color); border:1px solid var(--border-color); border-radius:12px; padding:4px 4px 4px 12px; margin-bottom:15px;">
+                <input type="text" name="u_search" placeholder="輸入用戶名..." required style="border:none; background:transparent; color:var(--text-color); font-size:0.85rem; outline:none; flex:1;">
+                <button type="submit" style="background:var(--accent-color); color:white; border:none; padding:6px 12px; border-radius:8px; font-size:0.8rem; cursor:pointer;">搜尋</button>
             </form>
-            <p style="font-size:0.75rem; color:var(--text-muted); margin:0;">想找新朋友？輸入名字試試吧！</p>
         </div>
 
         <div style="background:var(--card-bg); padding:25px; border-radius:24px; border:1px solid var(--border-color);">
@@ -432,8 +459,11 @@ try {
         </div>
         <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
             <?php foreach ($all_categories as $cat): ?>
-                <a href="index.php?category=<?= $cat['id'] ?>" style="padding:12px; background:var(--bg-color); border-radius:10px; text-decoration:none; color:var(--text-color); text-align:center; font-weight:600; border:1px solid var(--border-color);">
-                    # <?= htmlspecialchars($cat['name']) ?>
+                <a href="index.php?category=<?= $cat['id'] ?>" style="padding:12px; background:var(--bg-color); border-radius:10px; text-decoration:none; color:var(--text-color); text-align:center; font-weight:600; border:1px solid var(--border-color); position:relative;">
+                    <?= ($cat['name'] == '系統公告') ? '📢' : '# ' ?> <?= htmlspecialchars($cat['name']) ?>
+                    <?php if($cat['name'] == '系統公告' && $unreadAnnouncementsCount > 0): ?>
+                        <span class="badge-inline" style="position:absolute; top:-5px; right:-5px;"><?= $unreadAnnouncementsCount ?></span>
+                    <?php endif; ?>
                 </a>
             <?php endforeach; ?>
         </div>
