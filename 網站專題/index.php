@@ -346,7 +346,6 @@ try {
         
         <?php if(isset($_SESSION['user_id'])): ?>
             <a href="index.php?view=friends_activity" class="menu-link <?= $viewFriendsActivity ? 'active' : '' ?>">✨ 好友動態</a>
-            <a href="index.php?view=history" class="menu-link <?= $viewHistory ? 'active' : '' ?>">🕒 瀏覽紀錄</a>
         <?php endif; ?>
         
         <button class="menu-btn" id="openCategories">📂 所有看板</button>
