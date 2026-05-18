@@ -26,6 +26,18 @@ try {
         die("這篇文章不存在！");
     }
 
+    // --- 核心功能：紀錄瀏覽行為 ---
+    if (isset($_SESSION['user_id'])) {
+        try {
+            $history_sql = "INSERT INTO browsing_history (user_id, post_id) VALUES (?, ?) 
+                            ON DUPLICATE KEY UPDATE viewed_at = CURRENT_TIMESTAMP";
+            $history_stmt = $pdo->prepare($history_sql);
+            $history_stmt->execute([$_SESSION['user_id'], $post_id]);
+        } catch (PDOException $e) {
+            // 靜默錯誤：若資料表尚未建立或發生意外，不影響使用者正常看文章
+        }
+    }
+
     // --- 【取得該文章的所有圖片】 ---
     $img_sql = "SELECT image_path FROM post_images WHERE post_id = ? ORDER BY id ASC";
     $img_stmt = $pdo->prepare($img_sql);
@@ -280,9 +292,11 @@ function renderPostContent($content, $images) {
                         <img src="<?= !empty($_SESSION['profile_img']) ? "uploads/users_profile_img/".$_SESSION['profile_img'] : "uploads/default_avatar.png" ?>" class="author-avatar" style="width:32px; height:32px;">
                         <span style="<?= $isAdmin ? 'color: var(--admin-color);' : '' ?>"><?= htmlspecialchars($_SESSION["username"]) ?></span>
                     </div>
+                    <!-- 新增「歷史瀏覽紀錄」至 Dropdown-menu 以配合 index.php -->
                     <div class="dropdown-menu" id="dropdownMenu">
                         <div style="padding: 10px 20px; font-size: 0.7rem; color: var(--text-muted); font-weight: 800; text-transform: uppercase;">使用者功能</div>
                         <a href="profile.php?id=<?= $_SESSION['user_id'] ?>">👤 我的個人資料</a>
+                        <a href="index.php?view=history">🕒 歷史瀏覽紀錄</a>
                         <a href="create_post.php">✍️ 撰寫新文章</a>
                         
                         <?php if ($isAdmin): ?>
@@ -396,7 +410,7 @@ function renderPostContent($content, $images) {
     <div class="modal-content">
         <h3 style="margin-top:0; font-weight:800;">🚩 檢舉此文章</h3>
         <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom:10px;">請敘述檢舉理由：</p>
-        <textarea id="reportReason" style="width:100%; height:120px; border-radius:12px; border:2px solid var(--border-color); background:var(--bg-color); color:var(--text-color); padding:15px; box-sizing:border-box; outline:none; font-family:inherit;" placeholder="例如：內容包含不當言論..."></textarea>
+        <textarea id="reportReason" style="width:100%; height:120px; border-radius:12px; border:2px solid var(--border-color); background:var(--bg-color); color:var(--text-color); padding:15px; box-sizing:border-box; outline:none; font-family:inherit;" placeholder="例如：內容包含不當言言..."></textarea>
         <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:20px;">
             <button style="background:var(--sidebar-item-hover); color:var(--text-color); border:none; padding:10px 20px; border-radius:10px; cursor:pointer; font-weight:700;" onclick="closeReport()">取消</button>
             <button id="submitReportBtn" style="background:#ef4444; color:white; border:none; padding:10px 20px; border-radius:10px; cursor:pointer; font-weight:700;" onclick="submitReport()">送出檢舉</button>

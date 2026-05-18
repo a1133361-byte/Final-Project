@@ -5,6 +5,7 @@ require_once "includes/dbh.inc.php";
 $searchTerm = isset($_GET['search']) ? trim($_GET['search']) : '';
 $catID = isset($_GET['category']) ? $_GET['category'] : '';
 $viewFriendsActivity = isset($_GET['view']) && $_GET['view'] === 'friends_activity';
+$viewHistory = isset($_GET['view']) && $_GET['view'] === 'history';
 
 // 判斷是否為管理員
 $isAdmin = isset($_SESSION['role']) && $_SESSION['role'] == 1;
@@ -103,6 +104,25 @@ try {
         $stmt->execute(array_merge($friend_ids, $friend_ids, $friend_ids));
         $activities = $stmt->fetchAll();
         $posts = [];
+    } elseif ($viewHistory && isset($_SESSION['user_id'])) {
+        $currentCatName = "瀏覽紀錄";
+        $currentCatDesc = "回顧你最近閱讀過的文章紀錄。";
+        
+        // 查詢當前使用者的瀏覽紀錄（關聯 posts, users 與 categories）
+        $history_sql = "
+            SELECT posts.*, users.username, users.profile_img, categories.name AS cat_name, bh.viewed_at 
+            FROM browsing_history bh
+            JOIN posts ON bh.post_id = posts.id
+            JOIN users ON posts.user_id = users.id
+            JOIN categories ON posts.category_id = categories.id
+            WHERE bh.user_id = ?
+            ORDER BY bh.viewed_at DESC 
+            LIMIT 50
+        ";
+        $stmt = $pdo->prepare($history_sql);
+        $stmt->execute([$_SESSION['user_id']]);
+        $posts = $stmt->fetchAll();
+        $activities = [];
     } else {
         $sql = "SELECT posts.*, users.username, users.profile_img, categories.name AS cat_name FROM posts JOIN users ON posts.user_id = users.id JOIN categories ON posts.category_id = categories.id WHERE 1=1";
         if ($searchTerm !== '') $sql .= " AND (posts.title LIKE :search OR posts.content LIKE :search)";
@@ -288,6 +308,7 @@ try {
                     <div class="dropdown-menu" id="dropdownMenu">
                         <div style="padding: 10px 20px; font-size: 0.7rem; color: var(--text-muted); font-weight: 800; text-transform: uppercase;">使用者功能</div>
                         <a href="profile.php?id=<?= $_SESSION['user_id'] ?>">👤 我的個人資料</a>
+                        <a href="index.php?view=history">🕒 歷史瀏覽紀錄</a>
                         <a href="view_announcements.php">
                             📢 系統公告通知
                             <?php if($unreadAnnouncementsCount > 0): ?>
@@ -321,10 +342,11 @@ try {
 <div class="main-wrapper">
     <aside class="left-sidebar">
         <div class="menu-label">主選單</div>
-        <a href="index.php" class="menu-link <?= ($catID == '' && !$viewFriendsActivity) ? 'active' : '' ?>">🏠 探索牆</a>
+        <a href="index.php" class="menu-link <?= ($catID == '' && !$viewFriendsActivity && !$viewHistory) ? 'active' : '' ?>">🏠 探索牆</a>
         
         <?php if(isset($_SESSION['user_id'])): ?>
             <a href="index.php?view=friends_activity" class="menu-link <?= $viewFriendsActivity ? 'active' : '' ?>">✨ 好友動態</a>
+            <a href="index.php?view=history" class="menu-link <?= $viewHistory ? 'active' : '' ?>">🕒 瀏覽紀錄</a>
         <?php endif; ?>
         
         <button class="menu-btn" id="openCategories">📂 所有看板</button>
@@ -366,11 +388,11 @@ try {
 
     <main>
         <div class="category-header">
-            <h2 style="margin:0;"><?= ($viewFriendsActivity) ? '✨ ' : (($catID == '') ? '🌏 ' : (($currentCatName == '系統公告') ? '📢 ' : '📂 ')) ?><?= htmlspecialchars($currentCatName) ?></h2>
+            <h2 style="margin:0;"><?= ($viewFriendsActivity) ? '✨ ' : (($viewHistory) ? '🕒 ' : (($catID == '') ? '🌏 ' : (($currentCatName == '系統公告') ? '📢 ' : '📂 '))) ?><?= htmlspecialchars($currentCatName) ?></h2>
             <p style="margin:10px 0 0 0; color:var(--text-muted);"><?= htmlspecialchars($currentCatDesc) ?></p>
         </div>
 
-        <?php if(!$viewFriendsActivity): ?>
+        <?php if(!$viewFriendsActivity && !$viewHistory): ?>
         <form action="index.php" method="GET" class="search-box">
             <input type="text" name="search" placeholder="在 <?= htmlspecialchars($currentCatName) ?> 中搜尋..." value="<?= htmlspecialchars($searchTerm) ?>">
             <?php if($catID): ?> <input type="hidden" name="category" value="<?= $catID ?>"> <?php endif; ?>
@@ -406,18 +428,29 @@ try {
                 </div>
             <?php endif; ?>
         <?php else: ?>
-            <?php foreach ($posts as $post): ?>
-                <article class="post-card">
-                    <span style="background:var(--accent-soft); color:var(--accent-color); font-size:0.75rem; font-weight:800; padding:4px 12px; border-radius:50px;"># <?= htmlspecialchars($post['cat_name']) ?></span>
-                    <h2 style="margin:12px 0;"><a href="view_post.php?id=<?= $post['id'] ?>" style="text-decoration:none; color:var(--text-color); font-weight:800;"><?= htmlspecialchars($post['title']) ?></a></h2>
-                    <div style="display:flex; align-items:center; gap:10px; margin-bottom:15px; font-size:0.9rem;">
-                        <img src="<?= !empty($post['profile_img']) ? "uploads/users_profile_img/".$post['profile_img'] : "uploads/default_avatar.png" ?>" style="width:30px; height:30px; border-radius:50%; object-fit:cover;">
-                        <span style="font-weight:600;"><?= htmlspecialchars($post['username']) ?></span>
-                        <span style="color:var(--text-muted);">• <?= date('Y/m/d', strtotime($post['created_at'])) ?></span>
-                    </div>
-                    <p style="color:var(--text-muted); line-height:1.6;"><?= htmlspecialchars(mb_substr(strip_tags($post['content']), 0, 110)) ?>...</p>
-                </article>
-            <?php endforeach; ?>
+            <?php if (count($posts) > 0): ?>
+                <?php foreach ($posts as $post): ?>
+                    <article class="post-card">
+                        <span style="background:var(--accent-soft); color:var(--accent-color); font-size:0.75rem; font-weight:800; padding:4px 12px; border-radius:50px;"># <?= htmlspecialchars($post['cat_name']) ?></span>
+                        <h2 style="margin:12px 0;"><a href="view_post.php?id=<?= $post['id'] ?>" style="text-decoration:none; color:var(--text-color); font-weight:800;"><?= htmlspecialchars($post['title']) ?></a></h2>
+                        <div style="display:flex; align-items:center; gap:10px; margin-bottom:15px; font-size:0.9rem;">
+                            <img src="<?= !empty($post['profile_img']) ? "uploads/users_profile_img/".$post['profile_img'] : "uploads/default_avatar.png" ?>" style="width:30px; height:30px; border-radius:50%; object-fit:cover;">
+                            <span style="font-weight:600;"><?= htmlspecialchars($post['username']) ?></span>
+                            <span style="color:var(--text-muted);">
+                                • <?= date('Y/m/d', strtotime($post['created_at'])) ?>
+                                <?php if (isset($post['viewed_at'])): ?>
+                                    <span style="color:var(--accent-color); font-weight: 700;"> (於 <?= date('m/d H:i', strtotime($post['viewed_at'])) ?> 閱讀)</span>
+                                <?php endif; ?>
+                            </span>
+                        </div>
+                        <p style="color:var(--text-muted); line-height:1.6;"><?= htmlspecialchars(mb_substr(strip_tags($post['content']), 0, 110)) ?>...</p>
+                    </article>
+                <?php endforeach; ?>
+            <?php else: ?>
+                <div class="post-card" style="text-align: center; padding: 50px;">
+                    <p style="color:var(--text-muted);"><?= $viewHistory ? "目前沒有任何瀏覽紀錄。" : "目前沒有文章。" ?></p>
+                </div>
+            <?php endif; ?>
         <?php endif; ?>
     </main>
 

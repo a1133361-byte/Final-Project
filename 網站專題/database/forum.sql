@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- 主機： 127.0.0.1
--- 產生時間： 2026-05-10 05:24:09
+-- 產生時間： 2026-05-18 16:11:11
 -- 伺服器版本： 10.4.32-MariaDB
 -- PHP 版本： 8.2.12
 
@@ -20,6 +20,28 @@ SET time_zone = "+00:00";
 --
 -- 資料庫： `forum`
 --
+
+-- --------------------------------------------------------
+
+--
+-- 資料表結構 `browsing_history`
+--
+
+CREATE TABLE `browsing_history` (
+  `id` int(11) NOT NULL,
+  `user_id` int(11) NOT NULL,
+  `post_id` int(11) NOT NULL,
+  `viewed_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- 傾印資料表的資料 `browsing_history`
+--
+
+INSERT INTO `browsing_history` (`id`, `user_id`, `post_id`, `viewed_at`) VALUES
+(1, 1, 5, '2026-05-18 14:10:21'),
+(2, 1, 3, '2026-05-18 14:10:27'),
+(3, 1, 1, '2026-05-18 14:10:30');
 
 -- --------------------------------------------------------
 
@@ -125,7 +147,8 @@ INSERT INTO `likes` (`id`, `user_id`, `post_id`, `created_at`) VALUES
 (31, 3, 3, '2026-04-05 08:55:01'),
 (32, 1, 4, '2026-04-05 09:21:01'),
 (35, 6, 5, '2026-05-09 07:43:23'),
-(36, 3, 4, '2026-05-09 07:59:12');
+(36, 3, 4, '2026-05-09 07:59:12'),
+(37, 1, 6, '2026-05-18 13:52:44');
 
 -- --------------------------------------------------------
 
@@ -293,6 +316,14 @@ INSERT INTO `users` (`id`, `username`, `password`, `role`, `email`, `created_at`
 --
 
 --
+-- 資料表索引 `browsing_history`
+--
+ALTER TABLE `browsing_history`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `unique_user_post` (`user_id`,`post_id`),
+  ADD KEY `post_id` (`post_id`);
+
+--
 -- 資料表索引 `categories`
 --
 ALTER TABLE `categories`
@@ -367,6 +398,12 @@ ALTER TABLE `users`
 --
 
 --
+-- 使用資料表自動遞增(AUTO_INCREMENT) `browsing_history`
+--
+ALTER TABLE `browsing_history`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
 -- 使用資料表自動遞增(AUTO_INCREMENT) `categories`
 --
 ALTER TABLE `categories`
@@ -388,7 +425,7 @@ ALTER TABLE `friends`
 -- 使用資料表自動遞增(AUTO_INCREMENT) `likes`
 --
 ALTER TABLE `likes`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=37;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=38;
 
 --
 -- 使用資料表自動遞增(AUTO_INCREMENT) `messages`
@@ -423,6 +460,13 @@ ALTER TABLE `users`
 --
 -- 已傾印資料表的限制式
 --
+
+--
+-- 資料表的限制式 `browsing_history`
+--
+ALTER TABLE `browsing_history`
+  ADD CONSTRAINT `browsing_history_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `browsing_history_ibfk_2` FOREIGN KEY (`post_id`) REFERENCES `posts` (`id`) ON DELETE CASCADE;
 
 --
 -- 資料表的限制式 `comments`
