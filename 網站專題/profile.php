@@ -65,7 +65,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     }
 }
 
-// --- 初始化導覽列通知計數器 ---
 $pendingReportsCount = 0;
 $unreadAnnouncementsCount = 0;
 if ($current_uid) {
@@ -91,10 +90,47 @@ try {
         die("找不到該用戶。");
     }
 
-    // 2. 取得該用戶發布的文章
-    $post_stmt = $pdo->prepare("SELECT posts.*, categories.name AS cat_name FROM posts JOIN categories ON posts.category_id = categories.id WHERE posts.user_id = ? ORDER BY created_at DESC");
-    $post_stmt->execute([$target_user_id]);
-    $user_posts = $post_stmt->fetchAll();
+    // 2. 取得該用戶發布的文章 (安全按讚統計關聯)
+    $user_posts = [];
+    try {
+        // 優先嘗試：從 `likes` 關聯表統計按讚數
+        $post_stmt = $pdo->prepare("SELECT posts.*, categories.name AS cat_name, 
+            (SELECT COUNT(*) FROM likes WHERE likes.post_id = posts.id) AS like_count 
+            FROM posts 
+            JOIN categories ON posts.category_id = categories.id 
+            WHERE posts.user_id = ? 
+            ORDER BY created_at DESC");
+        $post_stmt->execute([$target_user_id]);
+        $user_posts = $post_stmt->fetchAll();
+    } catch (PDOException $e) {
+        try {
+            // 次要嘗試：從 `post_likes` 關聯表統計
+            $post_stmt = $pdo->prepare("SELECT posts.*, categories.name AS cat_name, 
+                (SELECT COUNT(*) FROM post_likes WHERE post_likes.post_id = posts.id) AS like_count 
+                FROM posts 
+                JOIN categories ON posts.category_id = categories.id 
+                WHERE posts.user_id = ? 
+                ORDER BY created_at DESC");
+            $post_stmt->execute([$target_user_id]);
+            $user_posts = $post_stmt->fetchAll();
+        } catch (PDOException $e2) {
+            // 終極備用方案：若無額外按讚關聯表，直接抓取並檢查 posts 本身的按讚數欄位
+            $post_stmt = $pdo->prepare("SELECT posts.*, categories.name AS cat_name FROM posts JOIN categories ON posts.category_id = categories.id WHERE posts.user_id = ? ORDER BY created_at DESC");
+            $post_stmt->execute([$target_user_id]);
+            $user_posts = $post_stmt->fetchAll();
+            
+            // 手動過濾賦值
+            foreach ($user_posts as &$post) {
+                if (isset($post['likes_count'])) {
+                    $post['like_count'] = $post['likes_count'];
+                } elseif (isset($post['likes'])) {
+                    $post['like_count'] = $post['likes'];
+                } else {
+                    $post['like_count'] = 0;
+                }
+            }
+        }
+    }
 
     // 3. 好友關係判定
     $friend_status = 'none'; 
@@ -110,6 +146,19 @@ try {
                 $friend_status = ($relation['user_id'] == $current_uid) ? 'pending_sent' : 'pending_received';
             }
         }
+    }
+
+    // 4. 取得該目標用戶的好友人數 (使用 DISTINCT 防止雙向資料重複計數)
+    $friend_count = 0;
+    try {
+        $count_sql = "SELECT COUNT(DISTINCT CASE WHEN user_id = ? THEN friend_id ELSE user_id END) 
+                      FROM friends 
+                      WHERE (user_id = ? OR friend_id = ?) AND status = 'accepted'";
+        $count_stmt = $pdo->prepare($count_sql);
+        $count_stmt->execute([$target_user_id, $target_user_id, $target_user_id]);
+        $friend_count = (int)$count_stmt->fetchColumn();
+    } catch (PDOException $e) {
+        $friend_count = 0; // 防呆處理
     }
 
 } catch (PDOException $e) {
@@ -177,13 +226,12 @@ try {
         .dropdown-menu a { padding: 12px 20px; text-decoration: none; color: var(--text-color); font-weight: 600; font-size: 0.9rem; transition: 0.2s; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }
         .dropdown-menu a:hover { background: var(--sidebar-item-hover); color: var(--accent-color); }
 
-        .main-wrapper { max-width: 1400px; margin: 20px auto; padding: 0 25px; display: grid; grid-template-columns: 260px 1fr; gap: 30px; }
+        .main-wrapper { max-width: 1400px; margin: 20px auto; padding: 0 25px; display: grid; grid-template-columns: 280px 1fr; gap: 30px; }
 
         .profile-header { background: var(--card-bg); border-radius: 24px; border: 1px solid var(--border-color); overflow: hidden; margin-bottom: 25px; }
         .profile-cover { height: 160px; background: var(--header-gradient); opacity: 0.8; }
         .profile-info-section { padding: 0 40px 30px 40px; position: relative; display: flex; justify-content: space-between; align-items: flex-end; margin-top: -60px; }
         
-        /* 大頭照容器與上傳觸發 */
         .avatar-container { position: relative; width: 120px; height: 120px; }
         .profile-avatar { width: 120px; height: 120px; border-radius: 30px; border: 6px solid var(--card-bg); object-fit: cover; background: var(--card-bg); box-shadow: 0 10px 20px rgba(0,0,0,0.1); transition: 0.3s; }
         
@@ -209,14 +257,15 @@ try {
         .post-card { background: var(--card-bg); border-radius: 20px; padding: 25px; margin-bottom: 20px; border: 1px solid var(--border-color); transition: 0.3s; }
         .post-card:hover { transform: translateY(-3px); box-shadow: 0 10px 20px rgba(0,0,0,0.05); }
 
-        .menu-link { display: flex; align-items: center; gap: 10px; padding: 12px 15px; margin-bottom: 5px; border-radius: 12px; text-decoration: none; color: var(--text-color); font-weight: 600; transition: 0.2s; }
+        .menu-link { display: flex; align-items: center; gap: 10px; padding: 12px 15px; margin-bottom: 5px; border-radius: 12px; text-decoration: none; color: var(--text-color); font-weight: 600; transition: 0.2s; cursor: pointer; }
         .menu-link:hover { background: var(--sidebar-item-hover); color: var(--accent-color); }
         .menu-label { font-size: 0.75rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin: 20px 0 10px 10px; }
         .badge-inline { background: var(--danger-color); color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; margin-left: auto; font-weight: 800; }
+        .badge-count { background: var(--border-color); color: var(--text-color); font-size: 0.75rem; padding: 2px 10px; border-radius: 10px; margin-left: auto; font-weight: 700; transition: background 0.3s, color 0.3s; }
 
         @media (max-width: 900px) {
             .main-wrapper { grid-template-columns: 1fr; }
-            .left-sidebar { display: none; }
+            .left-sidebar { display: block; margin-bottom: 15px; }
             .profile-info-section { flex-direction: column; align-items: center; text-align: center; margin-top: -60px; }
             .profile-actions { margin-top: 20px; }
         }
@@ -267,7 +316,8 @@ try {
 <div class="main-wrapper">
     <aside class="left-sidebar">
         <div class="menu-label">個人檔案選單</div>
-        <a href="profile.php?id=<?= $target_user_id ?>" class="menu-link" style="background: var(--accent-soft); color: var(--accent-color);">👤 用戶簡介</a>
+        <a id="tabBio" class="menu-link" style="background: var(--accent-soft); color: var(--accent-color);">👤 用戶簡介</a>
+        <a id="tabPosts" class="menu-link">✍️ 歷史發文紀錄 <span class="badge-count" id="postCountBadge"><?= count($user_posts) ?></span></a>
         <a href="index.php" class="menu-link" style="margin-top: 20px;">🏠 返回探索牆</a>
     </aside>
 
@@ -316,8 +366,16 @@ try {
                 </div>
             </div>
             
-            <div class="profile-bio">
-                <h1 style="margin: 0 0 15px 0; font-size: 1.8rem; font-weight: 800;"><?= htmlspecialchars($user['username']) ?></h1>
+            <!-- 用戶簡介分頁主體區 -->
+            <div class="profile-bio" id="bioTabContent">
+                <h1 style="margin: 0 0 5px 0; font-size: 1.8rem; font-weight: 800;"><?= htmlspecialchars($user['username']) ?></h1>
+                
+                <!-- 新增：好友人數顯示徽章 -->
+                <div style="display: flex; gap: 10px; margin-bottom: 20px; align-items: center;">
+                    <span style="font-size: 0.85rem; background: var(--accent-soft); color: var(--accent-color); padding: 5px 12px; border-radius: 50px; font-weight: 700; display: inline-flex; align-items: center; gap: 5px;">
+                        👥 <?= $friend_count ?> 位好友
+                    </span>
+                </div>
                 
                 <!-- 顯示模式 -->
                 <div id="bioDisplay" class="bio-text">
@@ -337,24 +395,33 @@ try {
             </div>
         </section>
 
-        <h3 style="margin-bottom: 20px; display: flex; align-items: center; gap: 10px;">✍️ 歷史發布內容 <span style="font-size: 0.9rem; background: var(--border-color); padding: 2px 10px; border-radius: 10px;"><?= count($user_posts) ?></span></h3>
-        
-        <?php if (count($user_posts) > 0): ?>
-            <?php foreach ($user_posts as $post): ?>
-                <article class="post-card">
-                    <span style="background:var(--accent-soft); color:var(--accent-color); font-size:0.75rem; font-weight:800; padding:4px 12px; border-radius:50px;"># <?= htmlspecialchars($post['cat_name']) ?></span>
-                    <h2 style="margin:12px 0;"><a href="view_post.php?id=<?= $post['id'] ?>" style="text-decoration:none; color:var(--text-color); font-weight:800;"><?= htmlspecialchars($post['title']) ?></a></h2>
-                    <div style="color:var(--text-muted); font-size:0.9rem; margin-bottom:10px;">
-                        📅 發布於 <?= date('Y/m/d H:i', strtotime($post['created_at'])) ?>
-                    </div>
-                    <p style="color:var(--text-muted); line-height:1.6; margin:0;"><?= htmlspecialchars(mb_substr(strip_tags($post['content']), 0, 120)) ?>...</p>
-                </article>
-            <?php endforeach; ?>
-        <?php else: ?>
-            <div class="post-card" style="text-align: center; padding: 60px; color: var(--text-muted);">
-                此用戶尚未發表任何文章。
-            </div>
-        <?php endif; ?>
+        <section id="postsTabContent" style="display: none;">
+            <h3 style="margin-bottom: 20px; display: flex; align-items: center; gap: 10px;">
+                ✍️ 歷史發布內容 
+                <span style="font-size: 0.9rem; background: var(--border-color); padding: 2px 10px; border-radius: 10px;"><?= count($user_posts) ?></span>
+            </h3>
+            
+            <?php if (count($user_posts) > 0): ?>
+                <?php foreach ($user_posts as $post): ?>
+                    <article class="post-card">
+                        <span style="background:var(--accent-soft); color:var(--accent-color); font-size:0.75rem; font-weight:800; padding:4px 12px; border-radius:50px;"># <?= htmlspecialchars($post['cat_name']) ?></span>
+                        <h2 style="margin:12px 0;"><a href="view_post.php?id=<?= $post['id'] ?>" style="text-decoration:none; color:var(--text-color); font-weight:800;"><?= htmlspecialchars($post['title']) ?></a></h2>
+                        <div style="color:var(--text-muted); font-size:0.9rem; margin-bottom:10px; display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+                            <span>📅 發布於 <?= date('Y/m/d H:i', strtotime($post['created_at'])) ?></span>
+                            <!-- 新增讚數顯示 -->
+                            <span style="display: flex; align-items: center; gap: 4px; color: var(--danger-color); font-weight: 700;">
+                                ❤️ <?= (int)($post['like_count']) ?> 個讚
+                            </span>
+                        </div>
+                        <p style="color:var(--text-muted); line-height:1.6; margin:0;"><?= htmlspecialchars(mb_substr(strip_tags($post['content']), 0, 120)) ?>...</p>
+                    </article>
+                <?php endforeach; ?>
+            <?php else: ?>
+                <div class="post-card" style="text-align: center; padding: 60px; color: var(--text-muted);">
+                    此用戶尚未發表任何文章。
+                </div>
+            <?php endif; ?>
+        </section>
     </main>
 </div>
 
@@ -414,6 +481,60 @@ try {
             bioDisplay.style.display = 'block';
             bioEditForm.style.display = 'none';
             toggleEditBtn.style.display = 'inline-block';
+        };
+    }
+
+    // --- 新增：動態分頁切換互動邏輯 ---
+    const tabBio = document.getElementById('tabBio');
+    const tabPosts = document.getElementById('tabPosts');
+    const bioTabContent = document.getElementById('bioTabContent');
+    const postsTabContent = document.getElementById('postsTabContent');
+    const postCountBadge = document.getElementById('postCountBadge');
+
+    if (tabBio && tabPosts && bioTabContent && postsTabContent) {
+        // 用戶簡介分頁
+        tabBio.onclick = (e) => {
+            e.preventDefault();
+            // 切換左側選單高亮狀態
+            tabBio.style.background = 'var(--accent-soft)';
+            tabBio.style.color = 'var(--accent-color)';
+            tabPosts.style.background = 'transparent';
+            tabPosts.style.color = 'var(--text-color)';
+            if (postCountBadge) {
+                postCountBadge.style.background = 'var(--border-color)';
+                postCountBadge.style.color = 'var(--text-color)';
+            }
+            
+            // 顯示/隱藏對應內容區
+            bioTabContent.style.display = 'block';
+            postsTabContent.style.display = 'none';
+            if (toggleEditBtn) {
+                toggleEditBtn.style.display = 'inline-block';
+            }
+            // 重置個人檔案編輯為非編輯模式
+            if (bioDisplay) bioDisplay.style.display = 'block';
+            if (bioEditForm) bioEditForm.style.display = 'none';
+        };
+
+        // 歷史發文紀錄分頁
+        tabPosts.onclick = (e) => {
+            e.preventDefault();
+            // 切換左側選單高亮狀態
+            tabPosts.style.background = 'var(--accent-soft)';
+            tabPosts.style.color = 'var(--accent-color)';
+            tabBio.style.background = 'transparent';
+            tabBio.style.color = 'var(--text-color)';
+            if (postCountBadge) {
+                postCountBadge.style.background = 'var(--accent-color)';
+                postCountBadge.style.color = 'white';
+            }
+            
+            // 顯示/隱藏對應內容區
+            bioTabContent.style.display = 'none';
+            postsTabContent.style.display = 'block';
+            if (toggleEditBtn) {
+                toggleEditBtn.style.display = 'none';
+            }
         };
     }
 </script>

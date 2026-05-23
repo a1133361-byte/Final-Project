@@ -13,6 +13,43 @@ $isAdmin = isset($_SESSION['role']) && $_SESSION['role'] == 1;
 $currentCatName = "所有文章";
 $currentCatDesc = "探索社群中的最新動態與深度討論。";
 
+// --- 處理瀏覽紀錄操作 ---
+$historyMessage = '';
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SESSION['user_id'])) {
+    // 清除所有瀏覽紀錄
+    if (isset($_POST['clear_history'])) {
+        try {
+            $delete_stmt = $pdo->prepare("DELETE FROM browsing_history WHERE user_id = ?");
+            $delete_stmt->execute([$_SESSION['user_id']]);
+            $historyMessage = "已清除所有瀏覽紀錄";
+            header("Location: index.php?view=history&msg=cleared");
+            exit();
+        } catch (PDOException $e) {
+            $historyMessage = "清除失敗：" . $e->getMessage();
+        }
+    }
+    
+    // 切換瀏覽紀錄追蹤功能
+    if (isset($_POST['toggle_tracking'])) {
+        try {
+            $current_status = $pdo->prepare("SELECT track_browsing_history FROM users WHERE id = ?");
+            $current_status->execute([$_SESSION['user_id']]);
+            $status_result = $current_status->fetch();
+            $currentTrackingStatus = isset($status_result['track_browsing_history']) ? $status_result['track_browsing_history'] : 1;
+            $newStatus = $currentTrackingStatus ? 0 : 1;
+            
+            $update_stmt = $pdo->prepare("UPDATE users SET track_browsing_history = ? WHERE id = ?");
+            $update_stmt->execute([$newStatus, $_SESSION['user_id']]);
+            $historyMessage = $newStatus ? "已啟用瀏覽紀錄追蹤" : "已禁用瀏覽紀錄追蹤";
+            header("Location: index.php?view=history&msg=" . ($newStatus ? "enabled" : "disabled"));
+            exit();
+        } catch (PDOException $e) {
+            // 如果字段不存在，忽略錯誤
+            $historyMessage = "";
+        }
+    }
+}
+
 // --- 初始化計數器 ---
 $pendingReportsCount = 0;
 $unreadAnnouncementsCount = 0;
@@ -309,16 +346,11 @@ try {
                         <div style="padding: 10px 20px; font-size: 0.7rem; color: var(--text-muted); font-weight: 800; text-transform: uppercase;">使用者功能</div>
                         <a href="profile.php?id=<?= $_SESSION['user_id'] ?>">👤 我的個人資料</a>
                         <a href="index.php?view=history">🕒 歷史瀏覽紀錄</a>
-                        <a href="view_announcements.php">
-                            📢 系統公告通知
-                            <?php if($unreadAnnouncementsCount > 0): ?>
-                                <span class="badge-inline"><?= $unreadAnnouncementsCount ?></span>
-                            <?php endif; ?>
-                        </a>
                         <a href="create_post.php">✍️ 撰寫新文章</a>
                         
                         <?php if ($isAdmin): ?>
                             <div style="padding: 10px 20px; font-size: 0.7rem; color: var(--admin-color); font-weight: 800; text-transform: uppercase; background: var(--admin-soft);">管理員功能</div>
+                            <a href="admin_dashboard.php" class="admin-link">📊 後台數據首頁</a>
                             <a href="admin_announcement.php" class="admin-link">📢 發布系統公告</a>
                             <a href="admin_reports.php" class="admin-link">
                                 🚩 檢舉審核 
@@ -390,6 +422,21 @@ try {
             <h2 style="margin:0;"><?= ($viewFriendsActivity) ? '✨ ' : (($viewHistory) ? '🕒 ' : (($catID == '') ? '🌏 ' : (($currentCatName == '系統公告') ? '📢 ' : '📂 '))) ?><?= htmlspecialchars($currentCatName) ?></h2>
             <p style="margin:10px 0 0 0; color:var(--text-muted);"><?= htmlspecialchars($currentCatDesc) ?></p>
         </div>
+
+        <?php if($viewHistory && isset($_SESSION['user_id'])): ?>
+            <?php if(isset($_GET['msg'])): ?>
+                <div style="background:var(--accent-color); color:white; padding:12px 20px; border-radius:12px; margin-bottom:20px; font-weight:600; display:flex; justify-content:space-between; align-items:center;">
+                    <span>
+                        <?= $_GET['msg'] === 'cleared' ? '✓ 已清除所有瀏覽紀錄' : ($_GET['msg'] === 'enabled' ? '✓ 已啟用瀏覽紀錄追蹤' : '✓ 已禁用瀏覽紀錄追蹤') ?>
+                    </span>
+                </div>
+            <?php endif; ?>
+            <div style="display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap;">
+                <form method="POST" action="" style="display:inline;">
+                    <button type="submit" name="clear_history" class="action-btn" style="background:var(--danger-color); color:white; padding:10px 20px; border-radius:12px; font-weight:700; border:none; cursor:pointer; font-size:0.9rem; transition:0.2s;" onclick="return confirm('確定要刪除所有瀏覽紀錄嗎？');">🗑️ 清除所有瀏覽紀錄</button>
+                </form>
+            </div>
+        <?php endif; ?>
 
         <?php if(!$viewFriendsActivity && !$viewHistory): ?>
         <form action="index.php" method="GET" class="search-box">
