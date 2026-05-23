@@ -216,14 +216,47 @@ function renderPostContent($content, $images) {
         .report-link { color: var(--text-muted); text-decoration: none; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
         .report-link:hover { color: #ef4444; }
 
-        /* 留言區塊 */
+        /* --- STREAMING_CHUNK:Styling layout floor comments and threaded nesting... --- */
+        /* 留言區塊與樓層回覆樣式 */
         .comment-section { margin-top: 30px; background: var(--card-bg); padding: 30px; border-radius: 24px; border: 1px solid var(--border-color); }
-        .comment-item { display: flex; gap: 15px; border-bottom: 1px solid var(--border-color); padding: 20px 0; }
+        .comment-item { display: flex; gap: 15px; border-bottom: 1px solid var(--border-color); padding: 20px 0; position: relative; flex-direction: row; }
         .comment-item:last-child { border-bottom: none; }
         .comment-avatar { width: 38px; height: 38px; border-radius: 50%; object-fit: cover; }
         .comment-user { font-weight: 700; color: var(--text-color); text-decoration: none; font-size: 0.95rem; }
         .comment-date { font-size: 0.8rem; color: var(--text-muted); font-weight: 500; }
-        .comment-content { margin-top: 6px; font-size: 1rem; color: var(--text-color); opacity: 0.9; }
+        .comment-content { margin-top: 6px; font-size: 1rem; color: var(--text-color); opacity: 0.9; word-break: break-all; }
+        
+        /* 樓層專屬徽章 */
+        .comment-floor-badge {
+            background: var(--accent-soft);
+            color: var(--accent-color);
+            font-size: 0.75rem;
+            font-weight: 800;
+            padding: 2px 8px;
+            border-radius: 6px;
+            margin-right: 6px;
+            display: inline-block;
+        }
+        
+        /* 回覆按鈕樣式 */
+        .comment-reply-trigger {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            font-weight: 700;
+            cursor: pointer;
+            padding: 4px 10px;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            transition: all 0.2s;
+        }
+        .comment-reply-trigger:hover {
+            color: var(--accent-color);
+            background: var(--accent-soft);
+        }
 
         .comment-form textarea { 
             width: 100%; padding: 15px; border: 2px solid var(--border-color); border-radius: 16px; 
@@ -233,6 +266,25 @@ function renderPostContent($content, $images) {
         .comment-form textarea:focus { border-color: var(--accent-color); }
         .btn-submit { background: var(--accent-color); color: white; border: none; padding: 10px 25px; border-radius: 12px; cursor: pointer; margin-top: 10px; font-weight: 700; font-size: 0.95rem; transition: 0.2s; }
         .btn-submit:hover { opacity: 0.9; transform: translateY(-1px); }
+
+        /* 巢狀回覆（縮排與提示線條）樣式 */
+        .comment-item.nested-reply {
+            margin-left: 36px;
+            padding-left: 20px;
+            border-left: 2px solid var(--border-color);
+            border-bottom: none;
+            padding-top: 15px;
+            padding-bottom: 5px;
+            background: transparent;
+        }
+
+        /* 針對窄螢幕/手機版自動縮小縮排，防止版面擠壓破圖 */
+        @media (max-width: 640px) {
+            .comment-item.nested-reply {
+                margin-left: 16px;
+                padding-left: 12px;
+            }
+        }
 
         /* 管理員樣式小盒 */
         .post-management {
@@ -365,10 +417,11 @@ function renderPostContent($content, $images) {
         <h3 style="margin-top: 0; font-weight: 800;">💬 留言討論</h3>
         
         <?php if (isset($_SESSION["user_id"])): ?>
+            <!-- 原有底部的通用留言輸入框：維持原樣不做任何功能與 ID 破壞 -->
             <div class="comment-form">
                 <form action="includes/comment.inc.php" method="POST">
                     <input type="hidden" name="post_id" value="<?= $post_id ?>">
-                    <textarea name="content" rows="3" placeholder="分享您的看法..." required></textarea>
+                    <textarea id="commentTextarea" name="content" rows="3" placeholder="分享您的看法..." required></textarea>
                     <div style="text-align: right;">
                         <button type="submit" name="submit_comment" class="btn-submit">發表留言</button>
                     </div>
@@ -376,7 +429,8 @@ function renderPostContent($content, $images) {
             </div>
         <?php endif; ?>
 
-        <div style="margin-top: 20px;">
+        <!-- --- STREAMING_CHUNK:Rendering list comments with replies placeholders... --- -->
+        <div style="margin-top: 20px;" id="commentsContainer">
             <?php
             $c_sql = "SELECT comments.*, users.username, users.id AS comment_user_id, users.profile_img AS comment_avatar
                       FROM comments
@@ -387,16 +441,36 @@ function renderPostContent($content, $images) {
             $c_stmt->execute([$post_id]);
             $comments = $c_stmt->fetchAll();
 
-            foreach ($comments as $c): ?>
-                <div class="comment-item">
+            foreach ($comments as $index => $c): 
+                $floor = $index + 1; 
+            ?>
+                <!-- 留言最外層：加入 data-floor 屬性利於動態 DOM 分發 -->
+                <div class="comment-item" id="comment-floor-<?= $floor ?>" data-floor="<?= $floor ?>">
                     <?php $c_img = !empty($c['comment_avatar']) ? "uploads/users_profile_img/".$c['comment_avatar'] : "uploads/default_avatar.png"; ?>
                     <img src="<?= $c_img ?>" class="comment-avatar">
-                    <div style="flex: 1;">
+                    <div style="flex: 1; display: flex; flex-direction: column;">
                         <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <a href="profile.php?id=<?= $c['comment_user_id'] ?>" class="comment-user"><?= htmlspecialchars($c['username']) ?></a>
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <span class="comment-floor-badge">B<?= $floor ?></span>
+                                <a href="profile.php?id=<?= $c['comment_user_id'] ?>" class="comment-user"><?= htmlspecialchars($c['username']) ?></a>
+                            </div>
                             <span class="comment-date"><?= date('m/d H:i', strtotime($c['created_at'])) ?></span>
                         </div>
                         <div class="comment-content"><?= nl2br(htmlspecialchars($c['content'])) ?></div>
+                        
+                        <?php if (isset($_SESSION["user_id"])): ?>
+                            <div style="text-align: right; margin-top: 5px;">
+                                <button type="button" class="comment-reply-trigger" onclick="replyToFloor(<?= $floor ?>, '<?= htmlspecialchars(addslashes($c['username'])) ?>')">
+                                    💬 回覆
+                                </button>
+                            </div>
+                        <?php endif; ?>
+
+                        <!-- 專為本樓設計的行內回覆輸入框容器（預設隱藏） -->
+                        <div class="inline-reply-form-container" style="display: none; margin-top: 15px; width: 100%;"></div>
+
+                        <!-- 專為本樓設計的子留言（縮排回覆）存放區 -->
+                        <div class="replies-container" style="margin-top: 10px; width: 100%; display: flex; flex-direction: column; gap: 12px;"></div>
                     </div>
                 </div>
             <?php endforeach; ?>
@@ -418,7 +492,222 @@ function renderPostContent($content, $images) {
     </div>
 </div>
 
+<!-- --- STREAMING_CHUNK:Configuring JavaScript nested routing and dynamic forms... --- -->
 <script>
+    /**
+     * 點擊樓層回覆觸發的互動邏輯 - 改為行內彈出輸入框，不再強行拖拽頁面到最底部
+     * @param {number} floor - 樓層編號
+     * @param {string} username - 該樓層的作者名字
+     */
+    function replyToFloor(floor, username) {
+        // 先關閉其他可能正開啟的行內回覆框，保持乾淨
+        document.querySelectorAll('.inline-reply-form-container').forEach(container => {
+            container.style.display = 'none';
+            container.innerHTML = '';
+        });
+
+        const targetComment = document.getElementById(`comment-floor-${floor}`);
+        if (!targetComment) return;
+
+        // 讀取動態計算後的視覺樓層編號 (例如 B1、B1-1、B2 等)，確保與使用者視覺上完全一致
+        const visualFloor = targetComment.getAttribute('data-visual-floor') || `B${floor}`;
+
+        // 【新增體驗優化】：如果目標樓層含有收合按鈕且目前為隱藏狀態，回覆時自動將其展開，方便閱讀前後文
+        const toggler = targetComment.querySelector('.replies-toggle-btn');
+        const repliesContainer = targetComment.querySelector('.replies-container');
+        if (toggler && repliesContainer && repliesContainer.style.display === 'none') {
+            toggler.click();
+        }
+
+        const inlineContainer = targetComment.querySelector('.inline-reply-form-container');
+        if (inlineContainer) {
+            // 動態置入完美相容原本 backend includes/comment.inc.php 的提交表單
+            inlineContainer.innerHTML = `
+                <form action="includes/comment.inc.php" method="POST" style="margin-top: 10px; width: 100%;">
+                    <input type="hidden" name="post_id" value="<?= $post_id ?>">
+                    <!-- 加上隱藏 prefix。當送出時，自動將 @B{floor} 前綴附加於內文 -->
+                    <input type="hidden" name="reply_prefix" value="@B${floor} ">
+                    <textarea name="content" rows="2" placeholder="回覆 ${visualFloor} @${username}..." required 
+                        style="width: 100%; padding: 12px; border: 2px solid var(--border-color); border-radius: 12px; background: var(--bg-color); color: var(--text-color); box-sizing: border-box; resize: vertical; outline: none; font-family: inherit; font-size: 0.95rem;"></textarea>
+                    <div style="text-align: right; margin-top: 8px; display: flex; justify-content: flex-end; gap: 8px;">
+                        <button type="button" onclick="closeInlineReply(${floor})" style="background: var(--sidebar-item-hover); color: var(--text-color); border: none; padding: 6px 15px; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 0.85rem;">取消</button>
+                        <button type="submit" name="submit_comment" class="btn-submit" style="margin-top: 0; padding: 6px 15px; border-radius: 8px; font-size: 0.85rem;">送出回覆</button>
+                    </div>
+                </form>
+            `;
+            
+            // 監聽行內表單送出事件，在送出前自動組裝好 "@B{floor}" 的前綴字，以符合原有的階梯式回覆資料設計
+            const form = inlineContainer.querySelector('form');
+            form.addEventListener('submit', function(e) {
+                const textarea = form.querySelector('textarea[name="content"]');
+                const prefix = form.querySelector('input[name="reply_prefix"]').value;
+                if (textarea && !textarea.value.startsWith(prefix)) {
+                    textarea.value = prefix + textarea.value;
+                }
+            });
+
+            inlineContainer.style.display = 'block';
+
+            // 平滑滾動聚焦到剛開啟的輸入框
+            const textarea = inlineContainer.querySelector('textarea');
+            setTimeout(() => {
+                textarea.focus();
+                textarea.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 150);
+        }
+    }
+
+    /**
+     * 關閉指定的行內回覆框
+     */
+    function closeInlineReply(floor) {
+        const targetComment = document.getElementById(`comment-floor-${floor}`);
+        if (targetComment) {
+            const inlineContainer = targetComment.querySelector('.inline-reply-form-container');
+            if (inlineContainer) {
+                inlineContainer.style.display = 'none';
+                inlineContainer.innerHTML = '';
+            }
+        }
+    }
+
+    /**
+     * 核心邏輯：在 DOM 載入後，處理留言的歸類與層級控制
+     * 1. 限制最多一層：將所有帶有「@B{樓層}」的前綴留言歸類至對應的「根留言」下，避免產生多層嵌套。
+     * 2. 收展回覆功能：預設隱藏子留言，並動態新增「查看回覆」按鈕進行切換。
+     */
+    document.addEventListener("DOMContentLoaded", function() {
+        const comments = Array.from(document.querySelectorAll('.comment-item'));
+        
+        // 第一階段：扁平化分配（最多一層縮排）
+        comments.forEach(comment => {
+            const contentEl = comment.querySelector('.comment-content');
+            if (!contentEl) return;
+
+            const htmlContent = contentEl.innerHTML.trim();
+            // 匹配開頭可能帶有空白或換行符的 @B{數字} 格式
+            const match = htmlContent.match(/^@B(\d+)(?:\s|<br\s*\/?>)*/i);
+            
+            if (match) {
+                const targetFloorNum = parseInt(match[1]);
+                let parentComment = document.getElementById(`comment-floor-${targetFloorNum}`);
+                
+                // 防止自己回覆自己造成的無限自嵌套
+                if (parentComment && parentComment !== comment) {
+                    // 【關鍵修正】：如果目標母留言本身也是一個子回覆 (nested-reply)，則向上追溯至最頂層的根留言
+                    while (parentComment && parentComment.classList.contains('nested-reply')) {
+                        const closestParent = parentComment.parentElement.closest('.comment-item');
+                        if (closestParent) {
+                            parentComment = closestParent;
+                        } else {
+                            break;
+                        }
+                    }
+
+                    if (parentComment && parentComment !== comment) {
+                        // 清理顯示的 @B{N} 字樣，使畫面像精巧的階梯對話般精緻乾淨
+                        contentEl.innerHTML = htmlContent.replace(/^@B\d+(?:\s|<br\s*\/?>)*/i, '');
+                        
+                        // 加上縮排與線條裝飾的樣式類別
+                        comment.classList.add('nested-reply');
+                        
+                        // 置入目標根留言的專屬回覆放置區中
+                        const repliesContainer = parentComment.querySelector('.replies-container');
+                        if (repliesContainer) {
+                            repliesContainer.appendChild(comment);
+                        }
+                    }
+                }
+            }
+        });
+
+        // 第二階段：【動態修正】重算並重新分配視覺樓層徽章 (避免在有子留言時，新的根留言發生跳號現象)
+        const rootComments = document.querySelectorAll('.comment-item:not(.nested-reply)');
+        rootComments.forEach((comment, rootIdx) => {
+            // 計算真正的根留言樓層 (B1, B2, B3...)
+            const visualRootFloorNum = rootIdx + 1;
+            const visualRootFloorStr = `B${visualRootFloorNum}`;
+            
+            // 存入 data-visual-floor 以便 replyToFloor 讀取正確提示文字
+            comment.setAttribute('data-visual-floor', visualRootFloorStr);
+            
+            // 更新根留言的 badge 視覺顯示
+            const badge = comment.querySelector('.comment-floor-badge');
+            if (badge) {
+                badge.textContent = visualRootFloorStr;
+            }
+
+            // 更新其下的子回覆留言 (B1-1, B1-2, B1-3...)
+            const repliesContainer = comment.querySelector('.replies-container');
+            if (repliesContainer) {
+                const nestedReplies = Array.from(repliesContainer.children);
+                nestedReplies.forEach((reply, replyIdx) => {
+                    const visualReplyFloorStr = `B${visualRootFloorNum}-${replyIdx + 1}`;
+                    
+                    // 存入 data-visual-floor 以便 replyToFloor 讀取
+                    reply.setAttribute('data-visual-floor', visualReplyFloorStr);
+                    
+                    // 更新子留言的 badge 視覺顯示
+                    const replyBadge = reply.querySelector('.comment-floor-badge');
+                    if (replyBadge) {
+                        replyBadge.textContent = visualReplyFloorStr;
+                    }
+                });
+            }
+        });
+
+        // 第三階段：為含有子留言的根留言建立「查看回覆」的展開收合按鈕
+        rootComments.forEach(comment => {
+            const repliesContainer = comment.querySelector('.replies-container');
+            if (repliesContainer && repliesContainer.children.length > 0) {
+                const replyCount = repliesContainer.children.length;
+                
+                // 預設將回覆內容完全隱藏
+                repliesContainer.style.display = 'none';
+
+                // 動態建立切換按鈕
+                const toggleBtn = document.createElement('button');
+                toggleBtn.type = 'button';
+                toggleBtn.className = 'replies-toggle-btn';
+                toggleBtn.style.cssText = `
+                    background: var(--accent-soft);
+                    color: var(--accent-color);
+                    border: none;
+                    padding: 6px 14px;
+                    border-radius: 8px;
+                    font-size: 0.85rem;
+                    font-weight: 700;
+                    cursor: pointer;
+                    margin-top: 10px;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    transition: all 0.2s;
+                    width: fit-content;
+                `;
+                toggleBtn.innerHTML = `💬 查看回覆 (${replyCount})`;
+
+                // 註冊切換展開/收合事件
+                toggleBtn.addEventListener('click', function() {
+                    if (repliesContainer.style.display === 'none') {
+                        repliesContainer.style.display = 'flex';
+                        toggleBtn.innerHTML = `▲ 收起回覆`;
+                        toggleBtn.style.background = 'var(--sidebar-item-hover)';
+                        toggleBtn.style.color = 'var(--text-muted)';
+                    } else {
+                        repliesContainer.style.display = 'none';
+                        toggleBtn.innerHTML = `💬 查看回覆 (${replyCount})`;
+                        toggleBtn.style.background = 'var(--accent-soft)';
+                        toggleBtn.style.color = 'var(--accent-color)';
+                    }
+                });
+
+                // 將收合按鈕插入至回覆存放區（replies-container）的正上方
+                repliesContainer.parentNode.insertBefore(toggleBtn, repliesContainer);
+            }
+        });
+    });
+
     /**
      * 自定義 Toast 通知函數
      * @param {string} message - 顯示內容
@@ -427,9 +716,9 @@ function renderPostContent($content, $images) {
     function showToast(message, type = 'success') {
         const container = document.getElementById('toastContainer');
         const toast = document.createElement('div');
+        const icon = type === 'success' ? '✅' : '❌';
         toast.className = `toast ${type === 'error' ? 'error' : ''}`;
         
-        const icon = type === 'success' ? '✅' : '❌';
         toast.innerHTML = `<span>${icon}</span> <span>${message}</span>`;
         container.appendChild(toast);
         
