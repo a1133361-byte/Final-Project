@@ -6,11 +6,13 @@ $searchTerm = isset($_GET['search']) ? trim($_GET['search']) : '';
 $catID = isset($_GET['category']) ? $_GET['category'] : '';
 $viewFriendsActivity = isset($_GET['view']) && $_GET['view'] === 'friends_activity';
 $viewHistory = isset($_GET['view']) && $_GET['view'] === 'history';
+$viewHot = isset($_GET['view']) && $_GET['view'] === 'hot';
+$viewCategories = isset($_GET['view']) && $_GET['view'] === 'categories'; // 新增「所有看板」中央頁面檢視
 
 // 判斷是否為管理員
 $isAdmin = isset($_SESSION['role']) && $_SESSION['role'] == 1;
 
-$currentCatName = "所有文章";
+$currentCatName = "最新文章";
 $currentCatDesc = "探索社群中的最新動態與深度討論。";
 
 // --- 處理瀏覽紀錄操作 ---
@@ -102,6 +104,27 @@ try {
         }
     }
 
+    // 取得「最近瀏覽看板」列表 (最多五個使用者瀏覽的看板名稱)
+    $recent_categories = [];
+    if (isset($_SESSION['user_id'])) {
+        try {
+            $recent_cat_sql = "
+                SELECT DISTINCT c.id, c.name 
+                FROM browsing_history bh
+                JOIN posts p ON bh.post_id = p.id
+                JOIN categories c ON p.category_id = c.id
+                WHERE bh.user_id = ?
+                ORDER BY bh.viewed_at DESC
+                LIMIT 5
+            ";
+            $recent_cat_stmt = $pdo->prepare($recent_cat_sql);
+            $recent_cat_stmt->execute([$_SESSION['user_id']]);
+            $recent_categories = $recent_cat_stmt->fetchAll();
+        } catch (PDOException $e) {
+            // 靜默錯誤防止資料庫結構不相容時崩潰
+        }
+    }
+
     $my_friends = [];
     $friend_ids = [];
     if (isset($_SESSION['user_id'])) {
@@ -112,7 +135,13 @@ try {
         $friend_ids = array_column($my_friends, 'id');
     }
 
-    if ($viewFriendsActivity && !empty($friend_ids)) {
+    if ($viewCategories) {
+        // 切換到中央看板列表
+        $currentCatName = "所有看板";
+        $currentCatDesc = "探索社群中的所有看板分類與主題。";
+        $posts = [];
+        $activities = [];
+    } elseif ($viewFriendsActivity && !empty($friend_ids)) {
         $currentCatName = "好友動態";
         $currentCatDesc = "看看你的好友們最近在忙些什麼。";
         $placeholders = implode(',', array_fill(0, count($friend_ids), '?'));
@@ -161,10 +190,31 @@ try {
         $posts = $stmt->fetchAll();
         $activities = [];
     } else {
-        $sql = "SELECT posts.*, users.username, users.profile_img, categories.name AS cat_name FROM posts JOIN users ON posts.user_id = users.id JOIN categories ON posts.category_id = categories.id WHERE 1=1";
-        if ($searchTerm !== '') $sql .= " AND (posts.title LIKE :search OR posts.content LIKE :search)";
-        if ($catID !== '') $sql .= " AND posts.category_id = :catID";
-        $sql .= " ORDER BY posts.created_at DESC";
+        if ($viewHot) {
+            $currentCatName = "熱門文章";
+            $currentCatDesc = "大家都在看！社群中按讚討論度最高的熱門文章。";
+            
+            $sql = "SELECT posts.*, users.username, users.profile_img, categories.name AS cat_name, 
+                    (SELECT COUNT(*) FROM likes WHERE likes.post_id = posts.id) AS like_count
+                    FROM posts 
+                    JOIN users ON posts.user_id = users.id 
+                    JOIN categories ON posts.category_id = categories.id 
+                    WHERE 1=1";
+            if ($searchTerm !== '') $sql .= " AND (posts.title LIKE :search OR posts.content LIKE :search)";
+            if ($catID !== '') $sql .= " AND posts.category_id = :catID";
+            $sql .= " ORDER BY like_count DESC, posts.created_at DESC";
+        } else {
+            $sql = "SELECT posts.*, users.username, users.profile_img, categories.name AS cat_name,
+                    (SELECT COUNT(*) FROM likes WHERE likes.post_id = posts.id) AS like_count
+                    FROM posts 
+                    JOIN users ON posts.user_id = users.id 
+                    JOIN categories ON posts.category_id = categories.id 
+                    WHERE 1=1";
+            if ($searchTerm !== '') $sql .= " AND (posts.title LIKE :search OR posts.content LIKE :search)";
+            if ($catID !== '') $sql .= " AND posts.category_id = :catID";
+            $sql .= " ORDER BY posts.created_at DESC";
+        }
+        
         $stmt = $pdo->prepare($sql);
         if ($searchTerm !== '') $stmt->bindValue(':search', '%' . $searchTerm . '%');
         if ($catID !== '') $stmt->bindValue(':catID', $catID);
@@ -172,6 +222,22 @@ try {
         $posts = $stmt->fetchAll();
         $activities = [];
     }
+
+    // --- 根據當前視角與看板，動態設定頂端 Icon 圖示 ---
+    if ($viewFriendsActivity) {
+        $currentCatIcon = "✨ ";
+    } elseif ($viewHistory) {
+        $currentCatIcon = "🕒 ";
+    } elseif ($viewHot) {
+        $currentCatIcon = "🔥 ";
+    } elseif ($viewCategories) {
+        $currentCatIcon = "📂 ";
+    } elseif ($catID === '') {
+        $currentCatIcon = "🌏 ";
+    } else {
+        $currentCatIcon = ($currentCatName === '系統公告') ? "📢 " : "📂 ";
+    }
+
 } catch (PDOException $e) {
     die("資料讀取失敗: " . $e->getMessage());
 }
@@ -317,13 +383,58 @@ try {
         .post-card, .activity-card { background: var(--card-bg); border-radius: 20px; padding: 25px; margin-bottom: 20px; border: 1px solid var(--border-color); transition: 0.3s; }
         .post-card:hover { transform: translateY(-3px); box-shadow: 0 10px 20px rgba(0,0,0,0.05); }
 
-        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 2000; }
-        .modal-content { background: var(--card-bg); width: 90%; max-width: 500px; padding: 30px; border-radius: 25px; border: 1px solid var(--border-color); }
+        /* 「所有看板」中央一條條清單樣式 */
+        .category-list-container {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .category-list-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 18px 25px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            text-decoration: none;
+            color: var(--text-color);
+            transition: all 0.2s ease;
+        }
+        .category-list-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--accent-color);
+            background: var(--accent-soft);
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.08);
+        }
+        .category-card-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 1.1rem;
+            font-weight: 700;
+        }
+        .category-card-prefix {
+            color: var(--accent-color);
+            font-weight: 800;
+        }
+        .category-card-arrow {
+            font-size: 1.2rem;
+            color: var(--text-muted);
+            transition: transform 0.2s;
+        }
+        .category-list-card:hover .category-card-arrow {
+            transform: translateX(4px);
+            color: var(--accent-color);
+        }
 
         @media (max-width: 1100px) { .main-wrapper { grid-template-columns: 1fr 300px; } .left-sidebar { display: none; } }
     </style>
 </head>
 <body data-theme="light">
+
+<!-- 用於顯示優雅通知的容器 -->
+<div id="toastContainer"></div>
 
 <header>
     <div class="nav-container">
@@ -353,7 +464,7 @@ try {
                             <a href="admin_dashboard.php" class="admin-link">📊 後台數據首頁</a>
                             <a href="admin_announcement.php" class="admin-link">📢 發布系統公告</a>
                             <a href="admin_reports.php" class="admin-link">
-                                🚩 檢舉審核 
+                                🚩 檢舉審理 
                                 <?php if($pendingReportsCount > 0): ?>
                                     <span class="badge-inline"><?= $pendingReportsCount ?></span>
                                 <?php endif; ?>
@@ -374,13 +485,15 @@ try {
 <div class="main-wrapper">
     <aside class="left-sidebar">
         <div class="menu-label">主選單</div>
-        <a href="index.php" class="menu-link <?= ($catID == '' && !$viewFriendsActivity && !$viewHistory) ? 'active' : '' ?>">🏠 探索牆</a>
+        <a href="index.php" class="menu-link <?= ($catID == '' && !$viewFriendsActivity && !$viewHistory && !$viewHot && !$viewCategories) ? 'active' : '' ?>">🏠 最新文章</a>
+        <a href="index.php?view=hot" class="menu-link <?= $viewHot ? 'active' : '' ?>">🔥 熱門文章</a>
         
         <?php if(isset($_SESSION['user_id'])): ?>
             <a href="index.php?view=friends_activity" class="menu-link <?= $viewFriendsActivity ? 'active' : '' ?>">✨ 好友動態</a>
         <?php endif; ?>
         
-        <button class="menu-btn" id="openCategories">📂 所有看板</button>
+        <!-- 將「所有看板」修改為直接載入中央主版塊（檢視 view=categories） -->
+        <a href="index.php?view=categories" class="menu-link <?= $viewCategories ? 'active' : '' ?>">📂 所有看板</a>
 
         <!-- 將系統公告獨立出來，放在主選單下面 -->
         <?php if($announcementCatID): ?>
@@ -402,24 +515,26 @@ try {
             </a>
         <?php endif; ?>
         
-        <div class="menu-label">常用分類看板</div>
-        <?php 
-        $displayCount = 0;
-        foreach ($all_categories as $cat): 
-            // 如果是系統公告看板，則在常用分類清單中跳過（因為上面已經獨立顯示了）
-            if($cat['name'] == '系統公告') continue;
-            if($displayCount >= 8) break;
-            $displayCount++;
-        ?>
-            <a href="index.php?category=<?= $cat['id'] ?>" class="menu-link <?= ($catID == $cat['id']) ? 'active' : '' ?>">
-                # <?= htmlspecialchars($cat['name']) ?>
-            </a>
-        <?php endforeach; ?>
+        <!-- 修改：「最近瀏覽看板」（最多五個使用者瀏覽的看板名稱） -->
+        <div class="menu-label">最近瀏覽看板</div>
+        <?php if (isset($_SESSION['user_id'])): ?>
+            <?php if (count($recent_categories) > 0): ?>
+                <?php foreach ($recent_categories as $rcat): ?>
+                    <a href="index.php?category=<?= $rcat['id'] ?>" class="menu-link <?= ($catID == $rcat['id']) ? 'active' : '' ?>">
+                        # <?= htmlspecialchars($rcat['name']) ?>
+                    </a>
+                <?php endforeach; ?>
+            <?php else: ?>
+                <div style="padding: 10px 15px; font-size: 0.85rem; color: var(--text-muted); line-height: 1.4;">尚無瀏覽紀錄。</div>
+            <?php endif; ?>
+        <?php else: ?>
+            <div style="padding: 10px 15px; font-size: 0.85rem; color: var(--text-muted); line-height: 1.4;">登入後顯示您最近瀏覽的看板。</div>
+        <?php endif; ?>
     </aside>
 
     <main>
         <div class="category-header">
-            <h2 style="margin:0;"><?= ($viewFriendsActivity) ? '✨ ' : (($viewHistory) ? '🕒 ' : (($catID == '') ? '🌏 ' : (($currentCatName == '系統公告') ? '📢 ' : '📂 '))) ?><?= htmlspecialchars($currentCatName) ?></h2>
+            <h2 style="margin:0;"><?= $currentCatIcon ?><?= htmlspecialchars($currentCatName) ?></h2>
             <p style="margin:10px 0 0 0; color:var(--text-muted);"><?= htmlspecialchars($currentCatDesc) ?></p>
         </div>
 
@@ -438,15 +553,33 @@ try {
             </div>
         <?php endif; ?>
 
-        <?php if(!$viewFriendsActivity && !$viewHistory): ?>
+        <?php if(!$viewFriendsActivity && !$viewHistory && !$viewCategories): ?>
         <form action="index.php" method="GET" class="search-box">
             <input type="text" name="search" placeholder="在 <?= htmlspecialchars($currentCatName) ?> 中搜尋..." value="<?= htmlspecialchars($searchTerm) ?>">
             <?php if($catID): ?> <input type="hidden" name="category" value="<?= $catID ?>"> <?php endif; ?>
+            <?php if($viewHot): ?> <input type="hidden" name="view" value="hot"> <?php endif; ?>
             <button type="submit">搜尋</button>
         </form>
         <?php endif; ?>
 
-        <?php if ($viewFriendsActivity): ?>
+        <!-- 中央版塊邏輯：當進入「所有看板」檢視模式 -->
+        <?php if ($viewCategories): ?>
+            <div class="category-list-container">
+                <?php foreach ($all_categories as $cat): ?>
+                    <a href="index.php?category=<?= $cat['id'] ?>" class="category-list-card">
+                        <div class="category-card-title">
+                            <span class="category-card-prefix"><?= ($cat['name'] == '系統公告') ? '📢' : '#' ?></span>
+                            <span><?= htmlspecialchars($cat['name']) ?></span>
+                            <?php if($cat['name'] == '系統公告' && $unreadAnnouncementsCount > 0): ?>
+                                <span class="badge-inline" style="margin-left:10px;"><?= $unreadAnnouncementsCount ?></span>
+                            <?php endif; ?>
+                        </div>
+                        <div class="category-card-arrow">➔</div>
+                    </a>
+                <?php endforeach; ?>
+            </div>
+
+        <?php elseif ($viewFriendsActivity): ?>
             <?php if (count($activities) > 0): ?>
                 <?php foreach ($activities as $act): ?>
                     <div class="activity-card">
@@ -486,6 +619,9 @@ try {
                                 • <?= date('Y/m/d', strtotime($post['created_at'])) ?>
                                 <?php if (isset($post['viewed_at'])): ?>
                                     <span style="color:var(--accent-color); font-weight: 700;"> (於 <?= date('m/d H:i', strtotime($post['viewed_at'])) ?> 閱讀)</span>
+                                <?php endif; ?>
+                                <?php if (isset($post['like_count']) && $post['like_count'] > 0): ?>
+                                    <span style="color:var(--danger-color); font-weight: 700; margin-left: 5px;">❤️ <?= $post['like_count'] ?> 個讚</span>
                                 <?php endif; ?>
                             </span>
                         </div>
@@ -530,26 +666,8 @@ try {
     </aside>
 </div>
 
-<div class="modal-overlay" id="categoryModal">
-    <div class="modal-content">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-            <h2 style="margin:0;">探索所有看板</h2>
-            <span id="closeModal" style="cursor:pointer; font-size:1.5rem;">&times;</span>
-        </div>
-        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
-            <?php foreach ($all_categories as $cat): ?>
-                <a href="index.php?category=<?= $cat['id'] ?>" style="padding:12px; background:var(--bg-color); border-radius:10px; text-decoration:none; color:var(--text-color); text-align:center; font-weight:600; border:1px solid var(--border-color); position:relative;">
-                    <?= ($cat['name'] == '系統公告') ? '📢' : '# ' ?> <?= htmlspecialchars($cat['name']) ?>
-                    <?php if($cat['name'] == '系統公告' && $unreadAnnouncementsCount > 0): ?>
-                        <span class="badge-inline" style="position:absolute; top:-5px; right:-5px;"><?= $unreadAnnouncementsCount ?></span>
-                    <?php endif; ?>
-                </a>
-            <?php endforeach; ?>
-        </div>
-    </div>
-</div>
-
 <script>
+    // Theme switching control
     const themeBtn = document.getElementById('themeBtn');
     const currentTheme = localStorage.getItem('theme') || 'light';
     document.body.setAttribute('data-theme', currentTheme);
@@ -560,6 +678,7 @@ try {
         localStorage.setItem('theme', targetTheme);
     };
 
+    // User trigger menu activation
     const userTrigger = document.getElementById('userTrigger');
     const dropdownMenu = document.getElementById('dropdownMenu');
     
@@ -575,13 +694,6 @@ try {
             }
         });
     }
-
-    const catModal = document.getElementById('categoryModal');
-    const openBtn = document.getElementById('openCategories');
-    const closeBtn = document.getElementById('closeModal');
-    if(openBtn) openBtn.onclick = () => catModal.style.display = 'flex';
-    if(closeBtn) closeBtn.onclick = () => catModal.style.display = 'none';
-    window.onclick = (e) => { if (e.target == catModal) catModal.style.display = 'none'; };
 </script>
 </body>
 </html>
