@@ -29,7 +29,137 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
     }
 
-    // 2. 處理大頭照更新
+    // 2. 處理年齡更新
+    if (isset($_POST['update_age'])) {
+        if ($current_uid && $current_uid == $target_user_id) {
+            $new_age = !empty($_POST['age']) ? (int)$_POST['age'] : null;
+            try {
+                $update_stmt = $pdo->prepare("UPDATE users SET age = ? WHERE id = ?");
+                $update_stmt->execute([$new_age, $current_uid]);
+                header("Location: profile.php?id=" . $target_user_id . "&success=age");
+                exit();
+            } catch (PDOException $e) {
+                $error_msg = "更新年齡失敗：" . $e->getMessage();
+            }
+        }
+    }
+
+    // 3. 處理性別更新
+    if (isset($_POST['update_gender'])) {
+        if ($current_uid && $current_uid == $target_user_id) {
+            $new_gender = !empty($_POST['gender']) ? $_POST['gender'] : null;
+            try {
+                $update_stmt = $pdo->prepare("UPDATE users SET gender = ? WHERE id = ?");
+                $update_stmt->execute([$new_gender, $current_uid]);
+                header("Location: profile.php?id=" . $target_user_id . "&success=gender");
+                exit();
+            } catch (PDOException $e) {
+                $error_msg = "更新性別失敗：" . $e->getMessage();
+            }
+        }
+    }
+
+    // 4. 處理興趣更新
+    if (isset($_POST['update_interests'])) {
+        if ($current_uid && $current_uid == $target_user_id) {
+            $new_interests = $_POST['interests'];
+            try {
+                $update_stmt = $pdo->prepare("UPDATE users SET interests = ? WHERE id = ?");
+                $update_stmt->execute([$new_interests, $current_uid]);
+                header("Location: profile.php?id=" . $target_user_id . "&success=interests");
+                exit();
+            } catch (PDOException $e) {
+                $error_msg = "更新興趣失敗：" . $e->getMessage();
+            }
+        }
+    }
+
+    // 5. 處理居住地更新
+    if (isset($_POST['update_location'])) {
+        if ($current_uid && $current_uid == $target_user_id) {
+            $new_location = $_POST['location'];
+            try {
+                $update_stmt = $pdo->prepare("UPDATE users SET location = ? WHERE id = ?");
+                $update_stmt->execute([$new_location, $current_uid]);
+                header("Location: profile.php?id=" . $target_user_id . "&success=location");
+                exit();
+            } catch (PDOException $e) {
+                $error_msg = "更新居住地失敗：" . $e->getMessage();
+            }
+        }
+    }
+    // 6. 處理 Banner 更新
+    if (isset($_FILES['banner_img']) && $current_uid == $target_user_id) {
+        $file = $_FILES['banner_img'];
+
+        if (!empty($file['name'])) {
+
+            $fileName = $file['name'];
+            $fileTmpName = $file['tmp_name'];
+            $fileSize = $file['size'];
+            $fileError = $file['error'];
+
+            $fileExt = explode('.', $fileName);
+            $fileActualExt = strtolower(end($fileExt));
+
+            $allowed = array('jpg', 'jpeg', 'png', 'gif', 'webp');
+
+            if (in_array($fileActualExt, $allowed)) {
+
+                if ($fileError === 0) {
+
+                    if ($fileSize < 10000000) {
+
+                        $fileNameNew = "banner_" . $current_uid . "_" . time() . "." . $fileActualExt;
+
+                        $fileDestination = 'uploads/users_banner_img/' . $fileNameNew;
+
+                        if (!is_dir('uploads/users_banner_img')) {
+                            mkdir('uploads/users_banner_img', 0777, true);
+                        }
+
+                        if (move_uploaded_file($fileTmpName, $fileDestination)) {
+
+                            try {
+
+                                $update_stmt = $pdo->prepare("UPDATE users SET banner_img = ? WHERE id = ?");
+
+                                $update_stmt->execute([$fileNameNew, $current_uid]);
+
+                                header("Location: profile.php?id=" . $target_user_id . "&success=banner");
+
+                                exit();
+
+                            } catch (PDOException $e) {
+
+                                $error_msg = "Banner 更新失敗";
+
+                            }
+
+                        }
+
+                    } else {
+
+                        $error_msg = "Banner 檔案太大";
+
+                    }
+
+                } else {
+
+                    $error_msg = "Banner 上傳錯誤";
+
+                }
+
+            } else {
+
+                $error_msg = "Banner 不支援此檔案類型";
+
+            }
+        }
+    }
+
+
+    // 6. 處理大頭照更新
     if (isset($_FILES['profile_img']) && $current_uid == $target_user_id) {
         $file = $_FILES['profile_img'];
         $fileName = $file['name'];
@@ -229,7 +359,45 @@ try {
         .main-wrapper { max-width: 1400px; margin: 20px auto; padding: 0 25px; display: grid; grid-template-columns: 280px 1fr; gap: 30px; }
 
         .profile-header { background: var(--card-bg); border-radius: 24px; border: 1px solid var(--border-color); overflow: hidden; margin-bottom: 25px; }
-        .profile-cover { height: 160px; background: var(--header-gradient); opacity: 0.8; }
+        .profile-cover {
+            height: 220px;
+            background: var(--header-gradient);
+            position: relative;
+            overflow: hidden;
+            transition: 0.3s;
+        }   
+        .editable-banner {
+            cursor: pointer;
+        }
+
+        .editable-banner {
+            cursor: pointer;
+        }
+
+        .banner-overlay {
+            position: absolute;
+            right: 16px;
+            bottom: 16px;
+
+            background: rgba(0,0,0,0.55);
+            color: white;
+
+            padding: 8px 14px;
+            border-radius: 12px;
+
+            font-size: 0.9rem;
+            font-weight: 700;
+
+            pointer-events: none;
+
+            opacity: 0.88;
+
+            transition: opacity 0.15s ease;
+        }
+
+        .editable-banner:hover .banner-overlay {
+            opacity: 1;
+        }
         .profile-info-section { padding: 0 40px 30px 40px; position: relative; display: flex; justify-content: space-between; align-items: flex-end; margin-top: -60px; }
         
         .avatar-container { position: relative; width: 120px; height: 120px; }
@@ -263,11 +431,94 @@ try {
         .badge-inline { background: var(--danger-color); color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; margin-left: auto; font-weight: 800; }
         .badge-count { background: var(--border-color); color: var(--text-color); font-size: 0.75rem; padding: 2px 10px; border-radius: 10px; margin-left: auto; font-weight: 700; transition: background 0.3s, color 0.3s; }
 
+        /* --- 新增：個人詳細資料卡樣式 --- */
+        .profile-details-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .detail-item {
+            background: var(--bg-color);
+            border: 1px solid var(--border-color);
+            padding: 15px 20px;
+            border-radius: 16px;
+            transition: 0.3s;
+        }
+        .detail-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .detail-header span {
+            font-size: 0.85rem;
+            font-weight: 800;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .detail-edit-btn {
+            background: none;
+            border: none;
+            color: var(--accent-color);
+            font-size: 0.8rem;
+            font-weight: 700;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 8px;
+            transition: 0.2s;
+        }
+        .detail-edit-btn:hover {
+            background: var(--accent-soft);
+        }
+        .detail-value {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--text-color);
+        }
+        .inline-edit-form {
+            display: none;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 8px;
+        }
+        .inline-input {
+            width: 100%;
+            box-sizing: border-box;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            background: var(--card-bg);
+            color: var(--text-color);
+            padding: 8px 12px;
+            font-family: inherit;
+            font-size: 0.95rem;
+        }
+        .inline-input:focus {
+            outline: none;
+            border-color: var(--accent-color);
+        }
+        .inline-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .btn-xs {
+            padding: 5px 12px;
+            font-size: 0.8rem;
+            border-radius: 8px;
+        }
+
         @media (max-width: 900px) {
             .main-wrapper { grid-template-columns: 1fr; }
             .left-sidebar { display: block; margin-bottom: 15px; }
             .profile-info-section { flex-direction: column; align-items: center; text-align: center; margin-top: -60px; }
             .profile-actions { margin-top: 20px; }
+        }
+
+        @media (max-width: 600px) {
+            .profile-details-grid {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
@@ -326,8 +577,44 @@ try {
             <div style="background:var(--danger-color); color:white; padding:15px; border-radius:12px; margin-bottom:20px; font-weight:600;">⚠️ <?= $error_msg ?></div>
         <?php endif; ?>
 
+        <?php if(isset($_GET['success'])): ?>
+            <?php 
+                $success_text = "更新成功！";
+                if($_GET['success'] == 'bio') $success_text = "簡介更新成功！";
+                if($_GET['success'] == 'avatar') $success_text = "大頭照更新成功！";
+                if($_GET['success'] == 'age') $success_text = "年齡更新成功！";
+                if($_GET['success'] == 'gender') $success_text = "性別更新成功！";
+                if($_GET['success'] == 'interests') $success_text = "興趣嗜好更新成功！";
+                if($_GET['success'] == 'location') $success_text = "居住地更新成功！";
+                if($_GET['success'] == 'banner') $success_text = "背景圖片更新成功！";
+            ?>
+            <div style="background:var(--success-color); color:white; padding:15px; border-radius:12px; margin-bottom:20px; font-weight:600;">✅ <?= $success_text ?></div>
+        <?php endif; ?>
+
         <section class="profile-header">
-            <div class="profile-cover"></div>
+            <div class="profile-cover <?= ($current_uid == $target_user_id) ? 'editable-banner' : '' ?>" id="bannerBox"
+style="
+background:
+linear-gradient(rgba(0,0,0,0.25), rgba(0,0,0,0.25)),
+url('<?= !empty($user['banner_img']) ? "uploads/users_banner_img/".$user['banner_img'] : "" ?>');
+background-size: cover;
+background-position: center;
+background-repeat: no-repeat;
+">
+    
+    <?php if ($current_uid == $target_user_id): ?>
+
+        <div class="banner-overlay">
+            🖼️ 點擊更換 Banner
+        </div>
+
+        <form id="bannerForm" method="POST" enctype="multipart/form-data" style="display:none;">
+            <input type="file" name="banner_img" id="bannerInput" accept="image/*">
+        </form>
+
+    <?php endif; ?>
+
+</div>
             <div class="profile-info-section">
                 <!-- 頭像部分：如果是本人，點擊可更換 -->
                 <div class="avatar-container <?= ($current_uid == $target_user_id) ? 'editable-avatar' : '' ?>" id="avatarBox">
@@ -370,7 +657,7 @@ try {
             <div class="profile-bio" id="bioTabContent">
                 <h1 style="margin: 0 0 5px 0; font-size: 1.8rem; font-weight: 800;"><?= htmlspecialchars($user['username']) ?></h1>
                 
-                <!-- 新增：好友人數顯示徽章 -->
+                <!-- 好友人數顯示徽章 -->
                 <div style="display: flex; gap: 10px; margin-bottom: 20px; align-items: center;">
                     <span style="font-size: 0.85rem; background: var(--accent-soft); color: var(--accent-color); padding: 5px 12px; border-radius: 50px; font-weight: 700; display: inline-flex; align-items: center; gap: 5px;">
                         👥 <?= $friend_count ?> 位好友
@@ -378,13 +665,13 @@ try {
                 </div>
                 
                 <!-- 顯示模式 -->
-                <div id="bioDisplay" class="bio-text">
+                <div id="bioDisplay" class="bio-text" style="margin-bottom: 25px;">
                     <?= !empty($user['bio']) ? nl2br(htmlspecialchars($user['bio'])) : "這名用戶很神秘，還沒有填寫自我介紹。" ?>
                 </div>
 
                 <!-- 編輯模式 (僅本人可見) -->
                 <?php if($current_uid == $target_user_id): ?>
-                    <form id="bioEditForm" class="bio-edit-form" method="POST" action="">
+                    <form id="bioEditForm" class="bio-edit-form" method="POST" action="" style="margin-bottom: 25px;">
                         <textarea name="bio" class="bio-textarea" placeholder="介紹一下你自己..."><?= htmlspecialchars($user['bio']) ?></textarea>
                         <div class="edit-actions">
                             <button type="submit" name="update_bio" class="action-btn btn-primary">💾 儲存修改</button>
@@ -392,6 +679,104 @@ try {
                         </div>
                     </form>
                 <?php endif; ?>
+
+                <!-- --- 新增：個人詳細資料卡片 --- -->
+                <h3 style="margin: 30px 0 15px 0; font-size: 1.2rem; font-weight: 800; border-top: 1px solid var(--border-color); padding-top: 25px;">📋 個人詳細資料</h3>
+                <div class="profile-details-grid">
+                    <!-- 年齡 -->
+                    <div class="detail-item">
+                        <div class="detail-header">
+                            <span>🎂 年齡</span>
+                            <?php if ($current_uid == $target_user_id): ?>
+                                <button class="detail-edit-btn" onclick="toggleDetailEdit('Age')">✏️ 編輯</button>
+                            <?php endif; ?>
+                        </div>
+                        <div class="detail-value" id="valAge">
+                            <?= !empty($user['age']) ? htmlspecialchars($user['age']) . " 歲" : "未填寫" ?>
+                        </div>
+                        <?php if ($current_uid == $target_user_id): ?>
+                            <form class="inline-edit-form" id="formAge" method="POST" action="">
+                                <input type="number" name="age" class="inline-input" value="<?= htmlspecialchars($user['age'] ?? '') ?>" placeholder="輸入年齡" min="1" max="150">
+                                <div class="inline-actions">
+                                    <button type="submit" name="update_age" class="action-btn btn-primary btn-xs">儲存</button>
+                                    <button type="button" class="action-btn btn-outline btn-xs" onclick="toggleDetailEdit('Age')">取消</button>
+                                </div>
+                            </form>
+                        <?php endif; ?>
+                    </div>
+
+                    <!-- 性別 -->
+                    <div class="detail-item">
+                        <div class="detail-header">
+                            <span>⚧️ 性別</span>
+                            <?php if ($current_uid == $target_user_id): ?>
+                                <button class="detail-edit-btn" onclick="toggleDetailEdit('Gender')">✏️ 編輯</button>
+                            <?php endif; ?>
+                        </div>
+                        <div class="detail-value" id="valGender">
+                            <?= !empty($user['gender']) ? htmlspecialchars($user['gender']) : "未填寫" ?>
+                        </div>
+                        <?php if ($current_uid == $target_user_id): ?>
+                            <form class="inline-edit-form" id="formGender" method="POST" action="">
+                                <select name="gender" class="inline-input">
+                                    <option value="">選擇您的性別</option>
+                                    <option value="男" <?= (isset($user['gender']) && $user['gender'] === '男') ? 'selected' : '' ?>>男</option>
+                                    <option value="女" <?= (isset($user['gender']) && $user['gender'] === '女') ? 'selected' : '' ?>>女</option>
+                                    <option value="其他" <?= (isset($user['gender']) && $user['gender'] === '其他') ? 'selected' : '' ?>>其他</option>
+                                    <option value="保密" <?= (isset($user['gender']) && $user['gender'] === '保密') ? 'selected' : '' ?>>保密</option>
+                                </select>
+                                <div class="inline-actions">
+                                    <button type="submit" name="update_gender" class="action-btn btn-primary btn-xs">儲存</button>
+                                    <button type="button" class="action-btn btn-outline btn-xs" onclick="toggleDetailEdit('Gender')">取消</button>
+                                </div>
+                            </form>
+                        <?php endif; ?>
+                    </div>
+
+                    <!-- 興趣 -->
+                    <div class="detail-item">
+                        <div class="detail-header">
+                            <span>🎨 興趣嗜好</span>
+                            <?php if ($current_uid == $target_user_id): ?>
+                                <button class="detail-edit-btn" onclick="toggleDetailEdit('Interests')">✏️ 編輯</button>
+                            <?php endif; ?>
+                        </div>
+                        <div class="detail-value" id="valInterests">
+                            <?= !empty($user['interests']) ? htmlspecialchars($user['interests']) : "未填寫" ?>
+                        </div>
+                        <?php if ($current_uid == $target_user_id): ?>
+                            <form class="inline-edit-form" id="formInterests" method="POST" action="">
+                                <input type="text" name="interests" class="inline-input" value="<?= htmlspecialchars($user['interests'] ?? '') ?>" placeholder="例如：程式、慢跑、烹飪">
+                                <div class="inline-actions">
+                                    <button type="submit" name="update_interests" class="action-btn btn-primary btn-xs">儲存</button>
+                                    <button type="button" class="action-btn btn-outline btn-xs" onclick="toggleDetailEdit('Interests')">取消</button>
+                                </div>
+                            </form>
+                        <?php endif; ?>
+                    </div>
+
+                    <!-- 居住地 -->
+                    <div class="detail-item">
+                        <div class="detail-header">
+                            <span>📍 居住地</span>
+                            <?php if ($current_uid == $target_user_id): ?>
+                                <button class="detail-edit-btn" onclick="toggleDetailEdit('Location')">✏️ 編輯</button>
+                            <?php endif; ?>
+                        </div>
+                        <div class="detail-value" id="valLocation">
+                            <?= !empty($user['location']) ? htmlspecialchars($user['location']) : "未填寫" ?>
+                        </div>
+                        <?php if ($current_uid == $target_user_id): ?>
+                            <form class="inline-edit-form" id="formLocation" method="POST" action="">
+                                <input type="text" name="location" class="inline-input" value="<?= htmlspecialchars($user['location'] ?? '') ?>" placeholder="例如：台北市">
+                                <div class="inline-actions">
+                                    <button type="submit" name="update_location" class="action-btn btn-primary btn-xs">儲存</button>
+                                    <button type="button" class="action-btn btn-outline btn-xs" onclick="toggleDetailEdit('Location')">取消</button>
+                                </div>
+                            </form>
+                        <?php endif; ?>
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -449,7 +834,25 @@ try {
             if (!userTrigger.contains(e.target)) dropdownMenu.classList.remove('active');
         });
     }
+        // Banner 上傳觸發
+    const bannerBox = document.getElementById('bannerBox');
+    const bannerInput = document.getElementById('bannerInput');
+    const bannerForm = document.getElementById('bannerForm');
 
+    if (bannerBox && bannerInput) {
+
+        bannerBox.onclick = () => bannerInput.click();
+
+        bannerInput.onchange = () => {
+
+            if (bannerInput.value) {
+
+                bannerForm.submit();
+
+            }
+
+        };
+    }            
     // 編輯大頭照觸發
     const avatarBox = document.getElementById('avatarBox');
     const avatarInput = document.getElementById('avatarInput');
@@ -482,6 +885,22 @@ try {
             bioEditForm.style.display = 'none';
             toggleEditBtn.style.display = 'inline-block';
         };
+    }
+
+    // --- 新增：切換詳細資料的編輯狀態 ---
+    function toggleDetailEdit(field) {
+        const valueDiv = document.getElementById('val' + field);
+        const formEl = document.getElementById('form' + field);
+        
+        if (valueDiv && formEl) {
+            if (formEl.style.display === 'none' || formEl.style.display === '') {
+                valueDiv.style.display = 'none';
+                formEl.style.display = 'flex';
+            } else {
+                valueDiv.style.display = 'block';
+                formEl.style.display = 'none';
+            }
+        }
     }
 
     // --- 新增：動態分頁切換互動邏輯 ---
