@@ -39,10 +39,26 @@ try {
     }
 
     // --- 【取得該文章的所有圖片】 ---
-    $img_sql = "SELECT image_path FROM post_images WHERE post_id = ? ORDER BY id ASC";
-    $img_stmt = $pdo->prepare($img_sql);
-    $img_stmt->execute([$post_id]);
-    $post_images = $img_stmt->fetchAll(PDO::FETCH_COLUMN);
+    $post_images = [];
+    try {
+        $img_sql = "SELECT image_path FROM post_images WHERE post_id = ? ORDER BY id ASC";
+        $img_stmt = $pdo->prepare($img_sql);
+        $img_stmt->execute([$post_id]);
+        $post_images = $img_stmt->fetchAll(PDO::FETCH_COLUMN);
+    } catch (PDOException $e) {
+        $post_images = [];
+    }
+
+    // --- 【取得該文章的所有影片】 (新增以支援影片渲染) ---
+    $post_videos = [];
+    try {
+        $vid_sql = "SELECT video_path FROM post_videos WHERE post_id = ? ORDER BY id ASC";
+        $vid_stmt = $pdo->prepare($vid_sql);
+        $vid_stmt->execute([$post_id]);
+        $post_videos = $vid_stmt->fetchAll(PDO::FETCH_COLUMN);
+    } catch (PDOException $e) {
+        $post_videos = [];
+    }
 
     // 2. 按讚統計
     $like_sql = "SELECT COUNT(*) FROM likes WHERE post_id = ?";
@@ -63,21 +79,64 @@ try {
     die("讀取失敗: " . $e->getMessage());
 }
 
-// --- 【核心功能：處理標籤替換邏輯】 ---
-function renderPostContent($content, $images) {
-    $content = trim($content);
-    $safe_content = htmlspecialchars($content);
-    
-    $rendered = preg_replace_callback('/\[img(\d+)\]/i', function($matches) use ($images) {
+// --- 【核心功能：自適應富文本標籤替換與路徑重組】 ---
+function renderPostContent($content, $images, $videos) {
+    if (empty($content)) return '';
+
+    // 1. 先處理舊版的 [img1] 格式標籤替換（向後相容）
+    $content = preg_replace_callback('/\[img(\d+)\]/i', function($matches) use ($images) {
         $index = intval($matches[1]) - 1;
         if (isset($images[$index])) {
             $url = "uploads/post_imgs/" . $images[$index];
-            return '</div><div class="content-image-wrapper"><img src="'.$url.'" class="post-inline-img"></div><div class="content-text">';
+            return '<div class="content-image-wrapper"><img src="'.$url.'" class="post-inline-img"></div>';
         }
         return ''; 
-    }, $safe_content);
+    }, $content);
 
-    return '<div class="content-text">' . nl2br($rendered) . '</div>';
+    // 2. 解析來自可編輯 div 送出的 HTML 結構，替換其中的圖片與影片真實路徑
+    // 為了安全起見，我們使用正則表達式精準替換帶有 data-index 的 img 標籤路徑
+    $content = preg_replace_callback('/<img[^>]*data-index=["\']?(\d+)["\']?[^>]*>/i', function($matches) use ($images) {
+        $index = intval($matches[1]);
+        if (isset($images[$index])) {
+            $url = "uploads/post_imgs/" . $images[$index];
+            return '<div class="content-image-wrapper"><img src="'.$url.'" class="post-inline-img"></div>';
+        }
+        return '';
+    }, $content);
+
+    // 3. 替換其中的影片真實路徑
+    $content = preg_replace_callback('/<video[^>]*data-index=["\']?(\d+)["\']?[^>]*>.*?<\/video>/i', function($matches) use ($videos) {
+        $index = intval($matches[1]);
+        if (isset($videos[$index])) {
+            $url = "uploads/post_vids/" . $videos[$index];
+            return '<div class="content-image-wrapper"><video src="'.$url.'" controls class="post-inline-img" style="max-height:400px;"></video></div>';
+        }
+        return '';
+    }, $content);
+
+    // 4. 防禦性過濾 XSS：只允許安全的標籤通過，其餘進行轉譯，確保系統安全
+    // 這裡我們允許常見排版標籤：<div>, <p>, <br>, <img>, <video>, <span>, <strong>, <em>, <b>, <i>, <ul>, <ol>, <li>
+    $allowed_tags = '<div><p><br><img><video><span><strong><em><b><i><ul><ol><li>';
+    $safe_content = strip_tags($content, $allowed_tags);
+
+    // 若 strip_tags 造成文字被完全移除，則退回顯示原始文本，避免使用者文字消失
+    if (trim(strip_tags($safe_content)) === '' && trim(strip_tags($content)) !== '') {
+        $safe_content = htmlspecialchars($content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    }
+
+    $rendered = '<div class="content-text">' . nl2br($safe_content) . '</div>';
+
+    // 若文章內容沒有任何可解析的 img 標籤，則補上資料庫中的圖片
+    if (!preg_match('/<img[^>]*>/i', $content) && !preg_match('/\[img\d+\]/i', $content) && !empty($images)) {
+        $rendered .= '<div class="content-image-gallery">';
+        foreach ($images as $image) {
+            $url = "uploads/post_imgs/" . $image;
+            $rendered .= '<div class="content-image-wrapper"><img src="'.$url.'" class="post-inline-img"></div>';
+        }
+        $rendered .= '</div>';
+    }
+
+    return $rendered;
 }
 ?>
 <!DOCTYPE html>
@@ -216,7 +275,6 @@ function renderPostContent($content, $images) {
         .report-link { color: var(--text-muted); text-decoration: none; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
         .report-link:hover { color: #ef4444; }
 
-        /* --- STREAMING_CHUNK:Styling layout floor comments and threaded nesting... --- */
         /* 留言區塊與樓層回覆樣式 */
         .comment-section { margin-top: 30px; background: var(--card-bg); padding: 30px; border-radius: 24px; border: 1px solid var(--border-color); }
         .comment-item { display: flex; gap: 15px; border-bottom: 1px solid var(--border-color); padding: 20px 0; position: relative; flex-direction: row; }
@@ -382,7 +440,7 @@ function renderPostContent($content, $images) {
         </div>
 
         <div class="post-content-body">
-            <?= renderPostContent($post['content'], $post_images) ?>
+            <?= renderPostContent($post['content'], $post_images, $post_videos) ?>
         </div>
 
         <div class="post-footer-actions">
@@ -429,7 +487,6 @@ function renderPostContent($content, $images) {
             </div>
         <?php endif; ?>
 
-        <!-- --- STREAMING_CHUNK:Rendering list comments with replies placeholders... --- -->
         <div style="margin-top: 20px;" id="commentsContainer">
             <?php
             $c_sql = "SELECT comments.*, users.username, users.id AS comment_user_id, users.profile_img AS comment_avatar
@@ -492,7 +549,6 @@ function renderPostContent($content, $images) {
     </div>
 </div>
 
-<!-- --- STREAMING_CHUNK:Configuring JavaScript nested routing and dynamic forms... --- -->
 <script>
     /**
      * 點擊樓層回覆觸發的互動邏輯 - 改為行內彈出輸入框，不再強行拖拽頁面到最底部
