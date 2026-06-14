@@ -82,6 +82,7 @@
             margin-top: 15px;
             font-size: 14px;
             color: #666;
+            line-height: 1.8;
         }
 
         .footer-links a {
@@ -92,12 +93,45 @@
         .footer-links a:hover {
             text-decoration: underline;
         }
+        
+        /* 狀態訊息提示 */
+        .alert {
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+        .alert-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .alert-error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
     </style>
 </head>
 <body>
 
 <div class="login-container">
     <h2>歡迎回來</h2>
+    
+    <!-- 顯示錯誤或成功訊息 -->
+    <?php
+    if (isset($_GET['newpwd'])) {
+        if ($_GET['newpwd'] == "passwordupdated") {
+            echo '<div class="alert alert-success">密碼重設成功，請使用新密碼登入！</div>';
+        }
+    }
+    if (isset($_GET['error'])) {
+        if ($_GET['error'] == "wronglogin") {
+            echo '<div class="alert alert-error">帳號或密碼錯誤！</div>';
+        }
+    }
+    ?>
+
     <form action="includes/login.inc.php" method="POST">
         <div class="input-group">
             <input type="text" name="username" placeholder="帳號" required>
@@ -109,9 +143,11 @@
     </form>
 
     <div class="footer-links">
+        <a href="forgot-password.php">忘記密碼？</a><br>
         還沒有帳號？ <a href="regster.php">按此註冊</a><br>
         <a href="index.php">返回首頁</a>
     </div>
+    
 </div>
 
 </body>

@@ -42,7 +42,27 @@ $styleNames = [
 
 $chosenStyleDesc = $styleNames[$style] ?? $styleNames['professional'];
 
-// ── 核心系統提示詞：保護 HTML 結構與防止 AI 回答草稿中的問題 ──
+// ── 💡 核心效能優化：預先提取並替換龐大的圖片與影片標籤 ──
+$mediaTags = [];
+// 正則表達式匹配 <img> 標籤或整個 <video>...</video> 區塊
+$pattern = '/<img\b[^>]*>|<video\b[^>]*>.*?<\/video>/is';
+
+$cleanContent = preg_replace_callback($pattern, function($matches) use (&$mediaTags) {
+    $fullTag = $matches[0];
+    $index = count($mediaTags);
+    // 將原本完整的（含 Base64 程式碼的）標籤暫存到陣列中
+    $mediaTags[$index] = $fullTag;
+    
+    // 依據標籤類型，生成極為輕量且帶有 unique ID 的佔位標籤送給 AI
+    if (stripos($fullTag, '<img') === 0) {
+        return "<img data-placeholder-id=\"{$index}\" />";
+    } else {
+        return "<video data-placeholder-id=\"{$index}\"></video>";
+    }
+}, $rawContent);
+
+
+// ── 核心系統提示詞：保護佔位標籤結構與防止 AI 回答草稿中的問題 ──
 $systemPrompt = "您是本論壇最頂尖、最具防禦性的『文章寫作與修飾大師』。您的唯一任務是幫助用戶將他們寫的文章內容，用指定的風格進行潤色、修飾和排版重構。
 
 【🚨 絕對硬性規定：防範「回答問題」的防禦機制（務必嚴格執行）】：
@@ -54,9 +74,9 @@ $systemPrompt = "您是本論壇最頂尖、最具防禦性的『文章寫作與
      - ❌ 錯誤行為（絕對禁止）：開始寫教學回答『學習 PHP 您需要先安裝環境，然後從基礎語法學起...』
      -  正確行為（只修飾字句）：修飾為『在探索 PHP 的程式設計之路上，許多人常會面臨卡關的瓶頸與挫折感，究竟該如何規劃才能更高效地掌握這門技術呢？』
 
-【⚠️ 極度重要的 HTML 結構與媒體標籤保留規定】：
-1. 用戶提交的內容是 HTML 格式。其中可能包含 `<img ...>` 和 `<video ...>` 等媒體標籤，或像 `[img1]` 這樣的圖片佔位標記。
-2. 您【絕對不能】刪除、修改、搬移或替換任何 `<img>`、`<video>` 標籤，必須原封不動地保留在它們原本的位置！
+【⚠️ 極度重要的 HTML 結構與媒體佔位標籤保留規定】：
+1. 用戶提交的內容包含經過系統優化的媒體佔位標籤，如 `<img data-placeholder-id=\"0\" />` 或 `<video data-placeholder-id=\"1\"></video>`。
+2. 您【絕對不能】刪除、修改、搬移或替換任何帶有 `data-placeholder-id` 屬性的標籤！必須原封不動地保留在它們原本的位置，且【絕對不可變更其 data-placeholder-id 的數值】！
 3. 請維持用戶原有的 `<p>`、`<br>` 等段落排版結構，只對文字進行潤色與通順修飾。
 4. 您的回覆【只能包含潤色後的 HTML 文章代碼本身】，絕對不能附帶額外的 Markdown 格式（例如不要包在 ```html ... ``` 中）、解釋說明或哈拉寒暄！直接回傳純 HTML 內容。
 
@@ -67,7 +87,8 @@ $payload = [
     'contents' => [
         [
             'parts' => [
-                ['text' => $rawContent]
+                // 💡 送給 AI 的是已經清除龐大 Base64 的乾淨 HTML 文字
+                ['text' => $cleanContent]
             ]
         ]
     ],
@@ -140,6 +161,13 @@ if ($success) {
     }
     
     if (!empty($aiReply)) {
+        // ── 💡 核心還原機制：將潤色完畢後的佔位標籤，替換回原本完整的媒體標籤 ──
+        foreach ($mediaTags as $index => $originalTag) {
+            // 匹配 AI 可能輸出的各種引號與格式的佔位標籤，並精準替換回帶有 Base64 的完整原始 tag
+            $restorePattern = '/<(img|video)\b[^>]*?data-placeholder-id\s*=\s*["\']' . $index . '["\'][^>]*?>(?:<\/video>)?/is';
+            $aiReply = preg_replace($restorePattern, $originalTag, $aiReply);
+        }
+
         echo json_encode(['polished_content' => $aiReply]);
     } else {
         echo json_encode(['error' => 'AI 思考過程中發生空白錯誤，請重試！']);
