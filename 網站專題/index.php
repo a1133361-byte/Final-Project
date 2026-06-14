@@ -7,15 +7,14 @@ $catID = isset($_GET['category']) ? $_GET['category'] : '';
 $viewFriendsActivity = isset($_GET['view']) && $_GET['view'] === 'friends_activity';
 $viewHistory = isset($_GET['view']) && $_GET['view'] === 'history';
 $viewHot = isset($_GET['view']) && $_GET['view'] === 'hot';
-$viewCategories = isset($_GET['view']) && $_GET['view'] === 'categories'; // 新增「所有看板」中央頁面檢視
+$viewCategories = isset($_GET['view']) && $_GET['view'] === 'categories';
 
-// 判斷是否為管理員
 $isAdmin = isset($_SESSION['role']) && $_SESSION['role'] == 1;
 
 $currentCatName = "最新文章";
 $currentCatDesc = "探索社群中的最新動態與深度討論。";
 
-// --- 處理瀏覽紀錄操作 ---
+// --- 處理瀏覽紀錄與好友請求操作 ---
 $historyMessage = '';
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SESSION['user_id'])) {
     // 清除所有瀏覽紀錄
@@ -46,27 +45,64 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SESSION['user_id'])) {
             header("Location: index.php?view=history&msg=" . ($newStatus ? "enabled" : "disabled"));
             exit();
         } catch (PDOException $e) {
-            // 如果字段不存在，忽略錯誤
             $historyMessage = "";
         }
+    }
+
+    // ===== 接受好友請求 =====
+    if (isset($_POST['accept_friend']) && isset($_POST['friend_row_id'])) {
+        try {
+            $rowId = (int)$_POST['friend_row_id'];
+            $acc_stmt = $pdo->prepare("UPDATE friends SET status = 'accepted' WHERE id = ? AND friend_id = ?");
+            $acc_stmt->execute([$rowId, $_SESSION['user_id']]);
+            
+            $get_req = $pdo->prepare("SELECT user_id FROM friends WHERE id = ?");
+            $get_req->execute([$rowId]);
+            $req_row = $get_req->fetch();
+            
+            if ($req_row) {
+                $check = $pdo->prepare("SELECT id FROM friends WHERE user_id = ? AND friend_id = ?");
+                $check->execute([$_SESSION['user_id'], $req_row['user_id']]);
+                if (!$check->fetch()) {
+                    $ins = $pdo->prepare("INSERT INTO friends (user_id, friend_id, status) VALUES (?, ?, 'accepted')");
+                    $ins->execute([$_SESSION['user_id'], $req_row['user_id']]);
+                } else {
+                    $upd = $pdo->prepare("UPDATE friends SET status = 'accepted' WHERE user_id = ? AND friend_id = ?");
+                    $upd->execute([$_SESSION['user_id'], $req_row['user_id']]);
+                }
+            }
+            header("Location: " . $_SERVER['REQUEST_URI']);
+            exit();
+        } catch (PDOException $e) { }
+    }
+
+    // ===== 拒絕/取消好友請求 =====
+    if (isset($_POST['reject_friend']) && isset($_POST['friend_row_id'])) {
+        try {
+            $rowId = (int)$_POST['friend_row_id'];
+            $rej_stmt = $pdo->prepare("DELETE FROM friends WHERE id = ? AND friend_id = ?");
+            $rej_stmt->execute([$rowId, $_SESSION['user_id']]);
+            header("Location: " . $_SERVER['REQUEST_URI']);
+            exit();
+        } catch (PDOException $e) { }
     }
 }
 
 // --- 初始化計數器 ---
 $pendingReportsCount = 0;
 $unreadAnnouncementsCount = 0;
+$pendingFriendRequestsCount = 0;
+$pendingFriendRequests = [];
 
 if (isset($_SESSION['user_id'])) {
     $uid = $_SESSION['user_id'];
     try {
-        // 1. 管理員檢舉通知邏輯
         if ($isAdmin) {
             $report_sql = "SELECT COUNT(*) FROM reports WHERE status = 0";
             $report_stmt = $pdo->query($report_sql);
             $pendingReportsCount = (int)$report_stmt->fetchColumn();
         }
 
-        // 2. 未讀公告通知邏輯 (確保欄位 NULL 時也能運作)
         $unread_sql = "SELECT COUNT(*) FROM announcements 
                        WHERE created_at > (
                            SELECT IFNULL(last_announcement_view, '1970-01-01 00:00:00') 
@@ -75,17 +111,28 @@ if (isset($_SESSION['user_id'])) {
         $unread_stmt = $pdo->prepare($unread_sql);
         $unread_stmt->execute([$uid]);
         $unreadAnnouncementsCount = (int)$unread_stmt->fetchColumn();
+
+        $friend_req_sql = "
+            SELECT f.id AS friend_row_id, f.user_id AS requester_id, IFNULL(u.username, '未知用戶') AS username, u.profile_img
+            FROM friends f
+            LEFT JOIN users u ON f.user_id = u.id
+            WHERE f.friend_id = :friend_id AND f.status = 'pending'
+            ORDER BY f.created_at DESC
+            LIMIT 10
+        ";
+        $friend_req_stmt = $pdo->prepare($friend_req_sql);
+        $friend_req_stmt->bindValue(':friend_id', (int)$uid, PDO::PARAM_INT);
+        $friend_req_stmt->execute();
+        $pendingFriendRequests = $friend_req_stmt->fetchAll();
+        $pendingFriendRequestsCount = count($pendingFriendRequests);
         
-    } catch (PDOException $e) {
-        // 靜默錯誤
-    }
+    } catch (PDOException $e) { }
 }
 
 try {
     $cat_query = $pdo->query("SELECT * FROM categories ORDER BY id ASC");
     $all_categories = $cat_query->fetchAll();
 
-    // 找出系統公告的 ID (假設名稱為系統公告)
     $announcementCatID = null;
     foreach ($all_categories as $cat) {
         if ($cat['name'] == '系統公告') {
@@ -104,7 +151,6 @@ try {
         }
     }
 
-    // 取得「最近瀏覽看板」列表 (最多五個使用者瀏覽的看板名稱)
     $recent_categories = [];
     if (isset($_SESSION['user_id'])) {
         try {
@@ -120,9 +166,7 @@ try {
             $recent_cat_stmt = $pdo->prepare($recent_cat_sql);
             $recent_cat_stmt->execute([$_SESSION['user_id']]);
             $recent_categories = $recent_cat_stmt->fetchAll();
-        } catch (PDOException $e) {
-            // 靜默錯誤防止資料庫結構不相容時崩潰
-        }
+        } catch (PDOException $e) { }
     }
 
     $my_friends = [];
@@ -136,7 +180,6 @@ try {
     }
 
     if ($viewCategories) {
-        // 切換到中央看板列表
         $currentCatName = "所有看板";
         $currentCatDesc = "探索社群中的所有看板分類與主題。";
         $posts = [];
@@ -174,7 +217,6 @@ try {
         $currentCatName = "瀏覽紀錄";
         $currentCatDesc = "回顧你最近閱讀過的文章紀錄。";
         
-        // 查詢當前使用者的瀏覽紀錄（關聯 posts, users 與 categories）
         $history_sql = "
             SELECT posts.*, users.username, users.profile_img, categories.name AS cat_name, bh.viewed_at 
             FROM browsing_history bh
@@ -223,7 +265,6 @@ try {
         $activities = [];
     }
 
-    // --- 根據當前視角與看板，動態設定頂端 Icon 圖示 ---
     if ($viewFriendsActivity) {
         $currentCatIcon = "✨ ";
     } elseif ($viewHistory) {
@@ -264,6 +305,10 @@ try {
             --admin-color: #f59e0b;
             --admin-soft: rgba(245, 158, 11, 0.1);
             --danger-color: #ef4444;
+            --success-color: #22c55e;
+            
+            /* AI Chat Window Variables */
+            --ai-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
         }
 
         [data-theme="dark"] {
@@ -276,6 +321,7 @@ try {
             --sidebar-item-hover: #334155;
             --accent-soft: rgba(99, 102, 241, 0.2);
             --admin-soft: rgba(245, 158, 11, 0.15);
+            --ai-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
         }
 
         body { 
@@ -328,7 +374,7 @@ try {
             position: absolute; 
             right: 0; 
             top: 125%; 
-            width: 240px; 
+            width: 280px; 
             background: var(--card-bg); 
             border: 1px solid var(--border-color); 
             border-radius: 16px; 
@@ -357,6 +403,86 @@ try {
         .admin-link { color: var(--admin-color) !important; background: var(--admin-soft); }
         .admin-link:hover { background: var(--admin-color) !important; color: white !important; }
 
+        /* ===== 好友邀請通知區塊樣式 ===== */
+        .friend-requests-section {
+            border-bottom: 1px solid var(--border-color);
+        }
+        .friend-requests-header {
+            padding: 10px 20px 6px;
+            font-size: 0.7rem;
+            color: var(--success-color);
+            font-weight: 800;
+            text-transform: uppercase;
+            background: rgba(34, 197, 94, 0.08);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .friend-request-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border-color);
+            background: transparent;
+            transition: background 0.15s;
+        }
+        .friend-request-item:last-child {
+            border-bottom: none;
+        }
+        .friend-request-item:hover {
+            background: var(--sidebar-item-hover);
+        }
+        .friend-request-avatar {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid var(--success-color);
+            flex-shrink: 0;
+        }
+        .friend-request-name {
+            font-weight: 700;
+            font-size: 0.88rem;
+            color: var(--text-color);
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .friend-request-actions {
+            display: flex;
+            gap: 5px;
+            flex-shrink: 0;
+        }
+        .friend-btn {
+            border: none;
+            border-radius: 8px;
+            padding: 5px 10px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.15s;
+            line-height: 1;
+        }
+        .friend-btn-accept {
+            background: var(--success-color);
+            color: white;
+        }
+        .friend-btn-accept:hover {
+            background: #16a34a;
+            transform: scale(1.05);
+        }
+        .friend-btn-reject {
+            background: var(--border-color);
+            color: var(--text-muted);
+        }
+        .friend-btn-reject:hover {
+            background: var(--danger-color);
+            color: white;
+            transform: scale(1.05);
+        }
+
         .main-wrapper { max-width: 1400px; margin: 20px auto; padding: 0 25px; display: grid; grid-template-columns: 260px 1fr 300px; gap: 30px; }
 
         .left-sidebar { position: sticky; top: 90px; height: fit-content; }
@@ -383,7 +509,6 @@ try {
         .post-card, .activity-card { background: var(--card-bg); border-radius: 20px; padding: 25px; margin-bottom: 20px; border: 1px solid var(--border-color); transition: 0.3s; }
         .post-card:hover { transform: translateY(-3px); box-shadow: 0 10px 20px rgba(0,0,0,0.05); }
 
-        /* 「所有看板」中央一條條清單樣式 */
         .category-list-container {
             display: flex;
             flex-direction: column;
@@ -428,12 +553,223 @@ try {
             color: var(--accent-color);
         }
 
-        @media (max-width: 1100px) { .main-wrapper { grid-template-columns: 1fr 300px; } .left-sidebar { display: none; } }
+        /* ===== AI 懸浮聊天室樣式 (AI Floating Chat CSS) ===== */
+        .ai-chat-trigger {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: var(--header-gradient);
+            color: white;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.8rem;
+            box-shadow: 0 4px 18px rgba(99, 102, 241, 0.4);
+            z-index: 1500;
+            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s;
+        }
+        .ai-chat-trigger:hover {
+            transform: scale(1.1) rotate(5deg);
+            box-shadow: 0 6px 24px rgba(99, 102, 241, 0.5);
+        }
+        .ai-chat-trigger.active {
+            transform: scale(0.9) rotate(-45deg);
+        }
+
+        .ai-chat-container {
+            position: fixed;
+            bottom: 96px;
+            right: 24px;
+            width: 380px;
+            height: 520px;
+            max-width: calc(100vw - 48px);
+            max-height: calc(100vh - 140px);
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            box-shadow: var(--ai-shadow);
+            z-index: 1500;
+            display: none;
+            flex-direction: column;
+            overflow: hidden;
+            transition: transform 0.3s ease, opacity 0.3s ease;
+            transform: translateY(20px) scale(0.95);
+            opacity: 0;
+        }
+        .ai-chat-container.open {
+            display: flex;
+            transform: translateY(0) scale(1);
+            opacity: 1;
+        }
+
+        .ai-chat-header {
+            padding: 16px 20px;
+            background: var(--header-gradient);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .ai-chat-header-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .ai-chat-header-title h4 {
+            margin: 0;
+            font-size: 1.05rem;
+            font-weight: 800;
+        }
+        .ai-chat-header-status {
+            font-size: 0.75rem;
+            background: rgba(255, 255, 255, 0.2);
+            padding: 3px 8px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+
+        .ai-chat-messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            background: var(--bg-color);
+        }
+        
+        .ai-message {
+            max-width: 80%;
+            padding: 12px 16px;
+            border-radius: 16px;
+            font-size: 0.9rem;
+            line-height: 1.45;
+            word-wrap: break-word;
+        }
+        .ai-message.user {
+            background: var(--accent-color);
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 4px;
+        }
+        .ai-message.bot {
+            background: var(--card-bg);
+            color: var(--text-color);
+            align-self: flex-start;
+            border-bottom-left-radius: 4px;
+            border: 1px solid var(--border-color);
+        }
+        
+        /* 推薦問題按鈕樣式 */
+        .ai-suggestions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 4px;
+        }
+        .ai-suggest-btn {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            color: var(--accent-color);
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .ai-suggest-btn:hover {
+            background: var(--accent-soft);
+            border-color: var(--accent-color);
+        }
+
+        .ai-chat-input-area {
+            padding: 14px 20px;
+            background: var(--card-bg);
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .ai-chat-input {
+            flex: 1;
+            border: 1px solid var(--border-color);
+            background: var(--bg-color);
+            color: var(--text-color);
+            padding: 10px 16px;
+            border-radius: 14px;
+            font-size: 0.9rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .ai-chat-input:focus {
+            border-color: var(--accent-color);
+            background: var(--card-bg);
+        }
+        .ai-chat-send {
+            background: var(--accent-color);
+            color: white;
+            border: none;
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+        .ai-chat-send:hover {
+            background: #4f46e5;
+        }
+        .ai-chat-send:active {
+            transform: scale(0.95);
+        }
+
+        /* 打字中動畫 (Typing Indicator) */
+        .ai-typing-indicator {
+            display: flex;
+            gap: 4px;
+            padding: 4px 8px;
+            align-items: center;
+        }
+        .ai-typing-dot {
+            width: 6px;
+            height: 6px;
+            background: var(--text-muted);
+            border-radius: 50%;
+            animation: ai-bounce 1.4s infinite ease-in-out both;
+        }
+        .ai-typing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .ai-typing-dot:nth-child(2) { animation-delay: -0.16s; }
+        
+        @keyframes ai-bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+
+        @media (max-width: 1100px) { 
+            .main-wrapper { grid-template-columns: 1fr 300px; } 
+            .left-sidebar { display: none; } 
+        }
+        @media (max-width: 480px) {
+            .ai-chat-container {
+                right: 12px;
+                left: 12px;
+                width: auto;
+                bottom: 84px;
+            }
+        }
     </style>
 </head>
 <body data-theme="light">
 
-<!-- 用於顯示優雅通知的容器 -->
 <div id="toastContainer"></div>
 
 <header>
@@ -447,13 +783,40 @@ try {
                         <img src="<?= !empty($_SESSION['profile_img']) ? "uploads/users_profile_img/".$_SESSION['profile_img'] : "uploads/default_avatar.png" ?>" style="width:32px; height:32px; border-radius:50%; object-fit:cover; border: 2px solid <?= $isAdmin ? 'var(--admin-color)' : 'var(--accent-color)' ?>;">
                         <span style="<?= $isAdmin ? 'color: var(--admin-color);' : '' ?>"><?= htmlspecialchars($_SESSION["username"]) ?></span>
                         <?php 
-                        $totalNotif = $unreadAnnouncementsCount + ($isAdmin ? $pendingReportsCount : 0);
+                        $totalNotif = $unreadAnnouncementsCount + ($isAdmin ? $pendingReportsCount : 0) + $pendingFriendRequestsCount;
                         if ($totalNotif > 0): 
                         ?>
                             <div class="notification-badge"><?= $totalNotif ?></div>
                         <?php endif; ?>
                     </div>
                     <div class="dropdown-menu" id="dropdownMenu">
+
+                        <?php if ($pendingFriendRequestsCount > 0): ?>
+                        <div class="friend-requests-section">
+                            <div class="friend-requests-header">
+                                🤝 好友邀請
+                                <span style="background:var(--success-color); color:white; padding:1px 7px; border-radius:8px; font-size:0.68rem;"><?= $pendingFriendRequestsCount ?></span>
+                            </div>
+                            <?php foreach ($pendingFriendRequests as $req): ?>
+                                <div class="friend-request-item">
+                                    <a href="profile.php?id=<?= $req['requester_id'] ?>" onclick="event.stopPropagation();" style="display:flex; align-items:center; flex:1; min-width:0; gap:8px; text-decoration:none;">
+                                        <img src="<?= !empty($req['profile_img']) ? "uploads/users_profile_img/".$req['profile_img'] : "uploads/default_avatar.png" ?>" class="friend-request-avatar">
+                                        <span class="friend-request-name"><?= htmlspecialchars($req['username']) ?></span>
+                                    </a>
+                                    <div class="friend-request-actions">
+                                        <form method="POST" action="<?= htmlspecialchars($_SERVER['REQUEST_URI']) ?>" style="display:inline;" onclick="event.stopPropagation();">
+                                            <input type="hidden" name="friend_row_id" value="<?= $req['friend_row_id'] ?>">
+                                            <button type="submit" name="accept_friend" class="friend-btn friend-btn-accept" title="接受好友邀請">✓ 接受</button>
+                                        </form>
+                                        <form method="POST" action="<?= htmlspecialchars($_SERVER['REQUEST_URI']) ?>" style="display:inline;" onclick="event.stopPropagation();">
+                                            <input type="hidden" name="friend_row_id" value="<?= $req['friend_row_id'] ?>">
+                                            <button type="submit" name="reject_friend" class="friend-btn friend-btn-reject" title="拒絕好友邀請">✕</button>
+                                        </form>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <?php endif; ?>
                         <div style="padding: 10px 20px; font-size: 0.7rem; color: var(--text-muted); font-weight: 800; text-transform: uppercase;">使用者功能</div>
                         <a href="profile.php?id=<?= $_SESSION['user_id'] ?>">👤 我的個人資料</a>
                         <a href="index.php?view=history">🕒 歷史瀏覽紀錄</a>
@@ -492,10 +855,8 @@ try {
             <a href="index.php?view=friends_activity" class="menu-link <?= $viewFriendsActivity ? 'active' : '' ?>">✨ 好友動態</a>
         <?php endif; ?>
         
-        <!-- 將「所有看板」修改為直接載入中央主版塊（檢視 view=categories） -->
         <a href="index.php?view=categories" class="menu-link <?= $viewCategories ? 'active' : '' ?>">📂 所有看板</a>
 
-        <!-- 將系統公告獨立出來，放在主選單下面 -->
         <?php if($announcementCatID): ?>
             <a href="index.php?category=<?= $announcementCatID ?>" class="menu-link <?= ($catID == $announcementCatID) ? 'active' : '' ?>">
                 📢 系統公告
@@ -515,7 +876,6 @@ try {
             </a>
         <?php endif; ?>
         
-        <!-- 修改：「最近瀏覽看板」（最多五個使用者瀏覽的看板名稱） -->
         <div class="menu-label">最近瀏覽看板</div>
         <?php if (isset($_SESSION['user_id'])): ?>
             <?php if (count($recent_categories) > 0): ?>
@@ -562,7 +922,6 @@ try {
         </form>
         <?php endif; ?>
 
-        <!-- 中央版塊邏輯：當進入「所有看板」檢視模式 -->
         <?php if ($viewCategories): ?>
             <div class="category-list-container">
                 <?php foreach ($all_categories as $cat): ?>
@@ -666,6 +1025,40 @@ try {
     </aside>
 </div>
 
+<!-- ===== AI 智能聊天懸浮按鈕 & 視窗 ===== -->
+<button class="ai-chat-trigger" id="aiChatTrigger" title="問問論壇 AI 助手">
+    🤖
+</button>
+
+<div class="ai-chat-container" id="aiChatContainer">
+    <div class="ai-chat-header">
+        <div class="ai-chat-header-title">
+            <span>🤖</span>
+            <div>
+                <h4>論壇 AI 智能助手</h4>
+            </div>
+        </div>
+        <span class="ai-chat-header-status">線上常駐</span>
+    </div>
+    
+    <div class="ai-chat-messages" id="aiChatMessages">
+        <div class="ai-message bot">
+            你好！我是本論壇的 AI 智能助手。你可以問我關於這個社群的功能介紹、如何發貼、加好友或是任何使用上的疑惑喔！✨
+            <div class="ai-suggestions" style="margin-top: 10px;">
+                <button class="ai-suggest-btn" onclick="sendSuggestedQuestion('如何發表新文章？')">✍️ 如何發表文章</button>
+                <button class="ai-suggest-btn" onclick="sendSuggestedQuestion('怎麼跟別的用戶加好友？')">🤝 如何加好友</button>
+                <button class="ai-suggest-btn" onclick="sendSuggestedQuestion('系統公告有什麼作用？')">📢 系統公告作用</button>
+                <button class="ai-suggest-btn" onclick="sendSuggestedQuestion('如何切換網站主題？')">🌓 怎麼切換黑夜模式</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="ai-chat-input-area">
+        <input type="text" class="ai-chat-input" id="aiChatInput" placeholder="輸入你想詢問的問題..." onkeypress="handleAiKeyPress(event)">
+        <button class="ai-chat-send" id="aiChatSendBtn" onclick="sendAiMessage()">➔</button>
+    </div>
+</div>
+
 <script>
     // Theme switching control
     const themeBtn = document.getElementById('themeBtn');
@@ -693,6 +1086,128 @@ try {
                 dropdownMenu.classList.remove('active');
             }
         });
+    }
+
+    // ===== AI 聊天室互動 JS 控制 (AI Chatbox Frontend Logic) =====
+    const aiChatTrigger = document.getElementById('aiChatTrigger');
+    const aiChatContainer = document.getElementById('aiChatContainer');
+    const aiChatMessages = document.getElementById('aiChatMessages');
+    const aiChatInput = document.getElementById('aiChatInput');
+
+    // 開關聊天室
+    aiChatTrigger.addEventListener('click', () => {
+        aiChatTrigger.classList.toggle('active');
+        aiChatContainer.classList.toggle('open');
+        if (aiChatContainer.classList.contains('open')) {
+            aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+            aiChatInput.focus();
+        }
+    });
+
+    // 處理輸入框 Enter 鍵
+    function handleAiKeyPress(event) {
+        if (event.key === 'Enter') {
+            sendAiMessage();
+        }
+    }
+
+    // 點擊建議問題
+    function sendSuggestedQuestion(question) {
+        aiChatInput.value = question;
+        sendAiMessage();
+    }
+
+    // 發送訊息給 AI
+    async function sendAiMessage() {
+        const text = aiChatInput.value.trim();
+        if (!text) return;
+
+        // 1. 顯示使用者的訊息
+        appendMessage(text, 'user');
+        aiChatInput.value = '';
+
+        // 2. 顯示 AI 正在打字的動畫
+        const typingId = appendTypingIndicator();
+        aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+
+        try {
+            // 3. 發送請求至後端 PHP
+            const response = await fetch('api_ai_chat.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ message: text })
+            });
+
+            const data = await response.json();
+            
+            // 移除打字指示器
+            removeTypingIndicator(typingId);
+
+            if (data && data.reply) {
+                // 4. 逐字打字效果 (Typing Effect)
+                typeOutMessage(data.reply);
+            } else {
+                appendMessage("抱歉，我現在有點頭痛，請稍後再試一次！💨", 'bot');
+            }
+        } catch (error) {
+            removeTypingIndicator(typingId);
+            appendMessage("連線失敗，請檢查網路狀態或稍後再試。", 'bot');
+        }
+    }
+
+    // 新增訊息至對話視窗
+    function appendMessage(text, sender) {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `ai-message ${sender}`;
+        msgDiv.innerText = text;
+        aiChatMessages.appendChild(msgDiv);
+        aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+        return msgDiv;
+    }
+
+    // 新增打字動畫
+    function appendTypingIndicator() {
+        const indicatorId = 'typing_' + Date.now();
+        const msgDiv = document.createElement('div');
+        msgDiv.className = 'ai-message bot';
+        msgDiv.id = indicatorId;
+        msgDiv.innerHTML = `
+            <div class="ai-typing-indicator">
+                <div class="ai-typing-dot"></div>
+                <div class="ai-typing-dot"></div>
+                <div class="ai-typing-dot"></div>
+            </div>
+        `;
+        aiChatMessages.appendChild(msgDiv);
+        return indicatorId;
+    }
+
+    // 移除打字動畫
+    function removeTypingIndicator(id) {
+        const indicator = document.getElementById(id);
+        if (indicator) {
+            indicator.remove();
+        }
+    }
+
+    // 模擬 AI 打字效果 (Character by Character Typing)
+    function typeOutMessage(fullText) {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = 'ai-message bot';
+        aiChatMessages.appendChild(msgDiv);
+
+        let index = 0;
+        const interval = setInterval(() => {
+            if (index < fullText.length) {
+                msgDiv.innerHTML += fullText.charAt(index);
+                index++;
+                aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+            } else {
+                clearInterval(interval);
+            }
+        }, 15); // 打字速度：每 15 毫秒一個字
     }
 </script>
 </body>

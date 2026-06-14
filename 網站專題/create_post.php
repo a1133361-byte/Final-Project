@@ -114,7 +114,7 @@ header{
 
 /* Layout */
 .main-wrapper{
-    max-width:1000px; /* 移除側邊欄後，縮小寬度讓畫面更集中 */
+    max-width:1000px; 
     margin:25px auto;
     padding:0 25px;
 }
@@ -183,7 +183,7 @@ input[type="text"]:focus,
     box-shadow:0 0 0 4px var(--accent-soft);
 }
 
-/* Rich Editor (取代原本的 textarea) */
+/* Rich Editor */
 .rich-editor {
     width:100%;
     min-height:300px;
@@ -199,7 +199,6 @@ input[type="text"]:focus,
     transition:.2s;
 }
 
-/* 限制使用者新增的媒體大小不超出編輯範圍 */
 .rich-editor img,
 .rich-editor video {
     max-width: 100%;
@@ -217,12 +216,23 @@ input[type="text"]:focus,
     border:1px solid var(--border-color);
     border-radius:20px;
     padding:18px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:15px;
 }
 
 .attachment-controls{
     display:flex;
     flex-wrap:wrap;
     gap:10px;
+}
+
+.ai-controls {
+    display:flex;
+    align-items:center;
+    gap:8px;
 }
 
 .btn-control{
@@ -242,6 +252,36 @@ input[type="text"]:focus,
     background:var(--accent-soft);
     border-color:var(--accent-color);
     color:var(--accent-color);
+}
+
+.btn-ai-polish {
+    background: var(--header-gradient);
+    color: white;
+    border: none;
+    padding: 10px 18px;
+    border-radius: 12px;
+    font-size: .9rem;
+    font-weight: 800;
+    cursor: pointer;
+    transition: .2s;
+    box-shadow: 0 4px 12px rgba(99,102,241,0.2);
+}
+
+.btn-ai-polish:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(99,102,241,0.35);
+}
+
+.style-select {
+    padding: 10px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    background: var(--card-bg);
+    color: var(--text-color);
+    font-size: .85rem;
+    font-weight: 700;
+    outline: none;
+    cursor: pointer;
 }
 
 /* Buttons */
@@ -288,6 +328,115 @@ input[type="text"]:focus,
     background:var(--sidebar-item-hover);
 }
 
+/* AI Polish Result Modal (AI潤色對比彈窗樣式) */
+.modal-overlay {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(4px);
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+.modal-overlay.open {
+    opacity: 1;
+    pointer-events: auto;
+}
+.modal {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 24px;
+    max-width: 800px;
+    width: 90%;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    transform: scale(0.95);
+    transition: transform 0.3s ease;
+    overflow: hidden;
+}
+.modal-overlay.open .modal {
+    transform: scale(1);
+}
+.modal-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.modal-title {
+    font-size: 1.2rem;
+    font-weight: 900;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.modal-body {
+    padding: 24px;
+    overflow-y: auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+@media (max-width: 768px) {
+    .modal-body {
+        grid-template-columns: 1fr;
+    }
+}
+.comparison-box {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.comparison-label {
+    font-size: 0.8rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+.comparison-content {
+    border: 1px solid var(--border-color);
+    background: var(--bg-color);
+    border-radius: 16px;
+    padding: 16px;
+    font-size: 0.92rem;
+    line-height: 1.6;
+    min-height: 250px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+.modal-footer {
+    padding: 20px 24px;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+/* Spinner CSS */
+.spinner {
+    border: 3px solid rgba(255,255,255,0.3);
+    border-radius: 50%;
+    border-top: 3px solid #fff;
+    width: 18px;
+    height: 18px;
+    animation: spin 1s linear infinite;
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 6px;
+}
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
 @media (max-width:600px){
     .form-content{
         padding:22px;
@@ -299,6 +448,14 @@ input[type="text"]:focus,
 
     .page-title{
         font-size:1.6rem;
+    }
+    
+    .attach-box {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .ai-controls {
+        justify-content: space-between;
     }
 }
 </style>
@@ -368,13 +525,13 @@ input[type="text"]:focus,
                     <div class="form-group">
                         <label>📖 文章內容</label>
 
-                        <!-- 將原本的 textarea 改成可直接編輯與插入圖片的 div -->
+                        <!-- 可編輯區塊 -->
                         <div id="postContentEditor" 
                              class="rich-editor" 
                              contenteditable="true" 
                              placeholder="輸入你的內容..."></div>
                         
-                        <!-- 隱藏的 textarea 用於打包傳送給後端，名稱仍維持 content 不破壞原本功能 -->
+                        <!-- 隱藏打包傳送給後端 -->
                         <textarea name="content" id="hiddenContent" style="display:none;"></textarea>
 
                         <div class="attach-box">
@@ -394,6 +551,19 @@ input[type="text"]:focus,
                                 </button>
 
                             </div>
+                            
+                            <!-- ===== 新增：AI 文章潤色工具列 ===== -->
+                            <div class="ai-controls">
+                                <select id="aiStyleSelect" class="style-select" title="選擇修飾風格">
+                                    <option value="professional">🛡️ 專業職場</option>
+                                    <option value="poetic">✨ 文學優美</option>
+                                    <option value="humorous">🤪 幽默風趣</option>
+                                    <option value="simple">💡 通俗易懂</option>
+                                </select>
+                                <button type="button" class="btn-ai-polish" id="aiPolishBtn" onclick="polishArticle()">
+                                    🔮 AI 潤色文章
+                                </button>
+                            </div>
 
                             <input type="file"
                                    id="imgInput"
@@ -410,7 +580,7 @@ input[type="text"]:focus,
                         </div>
                     </div>
 
-                    <!-- Hidden (原本對接後端檔案上傳的 input 保持不變) -->
+                    <!-- Hidden -->
                     <input type="file"
                            name="post_imgs[]"
                            id="hiddenFiles"
@@ -448,6 +618,30 @@ input[type="text"]:focus,
 
 </div>
 
+<!-- ===== 新增：AI 潤色對比確認彈窗 ===== -->
+<div class="modal-overlay" id="polishModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h3 class="modal-title">🔮 AI 潤色結果對比</h3>
+            <button class="btn-control" onclick="closePolishModal()" style="padding: 5px 10px;">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="comparison-box">
+                <span class="comparison-label">原先的內容</span>
+                <div class="comparison-content" id="originalTextContent" style="opacity: 0.7;"></div>
+            </div>
+            <div class="comparison-box">
+                <span class="comparison-label" style="color: var(--accent-color);">✨ AI 修飾後的內容</span>
+                <div class="comparison-content" id="polishedTextContent" style="border-color: var(--accent-color);"></div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-cancel" onclick="closePolishModal()" style="margin:0;">取消使用</button>
+            <button class="btn-submit" onclick="applyPolishResult()" style="margin:0; flex:none; padding: 12px 28px;">✔️ 替換成此內容</button>
+        </div>
+    </div>
+</div>
+
 <script>
 /* =========================
     Theme
@@ -479,16 +673,17 @@ const editor = document.getElementById('postContentEditor');
 
 // 初始化 Placeholder 效果
 if (editor.innerText.trim() === '') {
-    editor.innerHTML = '<span style="color: var(--text-muted);">輸入你的內容...</span>';
+    editor.innerHTML = '<span style="color: var(--text-muted);" id="placeholderSpan">輸入你的內容...</span>';
 }
 editor.addEventListener('focus', function() {
-    if (editor.innerText === '輸入你的內容...') {
+    const placeholder = document.getElementById('placeholderSpan');
+    if (placeholder) {
         editor.innerHTML = '';
     }
 });
 editor.addEventListener('blur', function() {
     if (editor.innerText.trim() === '') {
-        editor.innerHTML = '<span style="color: var(--text-muted);">輸入你的內容...</span>';
+        editor.innerHTML = '<span style="color: var(--text-muted);" id="placeholderSpan">輸入你的內容...</span>';
     }
 });
 
@@ -500,7 +695,8 @@ function insertElementAtCursor(el) {
         let range = sel.getRangeAt(0);
         
         // 如果目前還在 placeholder 狀態則清空
-        if (editor.innerText === '輸入你的內容...') {
+        const placeholder = document.getElementById('placeholderSpan');
+        if (placeholder) {
             editor.innerHTML = '';
             range = sel.getRangeAt(0);
         }
@@ -508,7 +704,6 @@ function insertElementAtCursor(el) {
         range.deleteContents();
         range.insertNode(el);
         
-        // 將游標移到新插入物件的後面
         range = range.cloneRange();
         range.setStartAfter(el);
         range.collapse(true);
@@ -558,17 +753,97 @@ document.getElementById('vidInput').addEventListener('change', function(){
     this.value = '';
 });
 
+/* =========================
+    新增：AI 文章潤色互動邏輯
+========================= */
+const polishModal = document.getElementById('polishModal');
+const originalTextContent = document.getElementById('originalTextContent');
+const polishedTextContent = document.getElementById('polishedTextContent');
+const aiPolishBtn = document.getElementById('aiPolishBtn');
+let polishedResultHTML = ""; // 儲存 AI 潤色完成後的完整 HTML
+
+async function polishArticle() {
+    // 檢查是否有 Placeholder 內容或空白
+    const placeholder = document.getElementById('placeholderSpan');
+    if (placeholder || editor.innerText.trim() === '') {
+        alert("請先輸入一些文章內容再進行 AI 潤色喔！✍️");
+        return;
+    }
+
+    const currentContent = editor.innerHTML;
+    const selectedStyle = document.getElementById('aiStyleSelect').value;
+
+    // 按鈕進入 Loading 狀態
+    aiPolishBtn.disabled = true;
+    const originalBtnText = aiPolishBtn.innerHTML;
+    aiPolishBtn.innerHTML = `<span class="spinner"></span> 魔法修飾中...`;
+
+    try {
+        const response = await fetch('api_ai_polish.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                content: currentContent,
+                style: selectedStyle
+            })
+        });
+
+        const data = await response.json();
+        
+        if (data && data.polished_content) {
+            // 保存潤色成果
+            polishedResultHTML = data.polished_content;
+
+            // 將 HTML 渲染到對比 Modal 中
+            originalTextContent.innerHTML = currentContent;
+            polishedTextContent.innerHTML = polishedResultHTML;
+
+            // 開啟對比 Modal
+            polishModal.classList.add('open');
+        } else {
+            alert(data.error || "潤色失敗，請稍後再試一次！💨");
+        }
+    } catch (error) {
+        alert("網路連線失敗，請檢查您的伺服器與 API 金鑰狀態。");
+    } finally {
+        // 恢復按鈕狀態
+        aiPolishBtn.disabled = false;
+        aiPolishBtn.innerHTML = originalBtnText;
+    }
+}
+
+function closePolishModal() {
+    polishModal.classList.remove('open');
+}
+
+function applyPolishResult() {
+    if (polishedResultHTML) {
+        editor.innerHTML = polishedResultHTML;
+    }
+    closePolishModal();
+}
+
+// 點擊彈窗遮罩關閉彈窗
+polishModal.onclick = (e) => {
+    if (e.target === polishModal) {
+        closePolishModal();
+    }
+};
+
 /* Submit 表單送出處理 */
 document.getElementById('postForm').addEventListener('submit', function(e){
     // 檢查是否有 Placeholder 內容
-    if (editor.innerText === '輸入你的內容...') {
+    const placeholder = document.getElementById('placeholderSpan');
+    if (placeholder) {
         editor.innerHTML = '';
     }
 
     // 將可編輯區塊內的純文字或 HTML 結構同步到隱藏的 textarea 送出
     document.getElementById('hiddenContent').value = editor.innerHTML;
 
-    // 重新過濾被使用者留在編輯器裡面的圖片檔案（沒被 Backspace 刪除的）
+    // 重新過濾被使用者留在編輯器裡面的圖片檔案
     const remainingImgs = editor.querySelectorAll('img[data-type="img"]');
     const dataTransferImg = new DataTransfer();
     remainingImgs.forEach(img => {

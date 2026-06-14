@@ -34,7 +34,7 @@ try {
             $history_stmt = $pdo->prepare($history_sql);
             $history_stmt->execute([$_SESSION['user_id'], $post_id]);
         } catch (PDOException $e) {
-            // 靜默錯誤：若資料表尚未建立或發生意外，不影響使用者正常看文章
+            // 靜默錯誤
         }
     }
 
@@ -49,7 +49,7 @@ try {
         $post_images = [];
     }
 
-    // --- 【取得該文章的所有影片】 (新增以支援影片渲染) ---
+    // --- 【取得該文章的所有影片】 ---
     $post_videos = [];
     try {
         $vid_sql = "SELECT video_path FROM post_videos WHERE post_id = ? ORDER BY id ASC";
@@ -94,7 +94,6 @@ function renderPostContent($content, $images, $videos) {
     }, $content);
 
     // 2. 解析來自可編輯 div 送出的 HTML 結構，替換其中的圖片與影片真實路徑
-    // 為了安全起見，我們使用正則表達式精準替換帶有 data-index 的 img 標籤路徑
     $content = preg_replace_callback('/<img[^>]*data-index=["\']?(\d+)["\']?[^>]*>/i', function($matches) use ($images) {
         $index = intval($matches[1]);
         if (isset($images[$index])) {
@@ -114,19 +113,16 @@ function renderPostContent($content, $images, $videos) {
         return '';
     }, $content);
 
-    // 4. 防禦性過濾 XSS：只允許安全的標籤通過，其餘進行轉譯，確保系統安全
-    // 這裡我們允許常見排版標籤：<div>, <p>, <br>, <img>, <video>, <span>, <strong>, <em>, <b>, <i>, <ul>, <ol>, <li>
+    // 4. 防禦性過濾 XSS
     $allowed_tags = '<div><p><br><img><video><span><strong><em><b><i><ul><ol><li>';
     $safe_content = strip_tags($content, $allowed_tags);
 
-    // 若 strip_tags 造成文字被完全移除，則退回顯示原始文本，避免使用者文字消失
     if (trim(strip_tags($safe_content)) === '' && trim(strip_tags($content)) !== '') {
         $safe_content = htmlspecialchars($content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     }
 
     $rendered = '<div class="content-text">' . nl2br($safe_content) . '</div>';
 
-    // 若文章內容沒有任何可解析的 img 標籤，則補上資料庫中的圖片
     if (!preg_match('/<img[^>]*>/i', $content) && !preg_match('/\[img\d+\]/i', $content) && !empty($images)) {
         $rendered .= '<div class="content-image-gallery">';
         foreach ($images as $image) {
@@ -255,6 +251,90 @@ function renderPostContent($content, $images, $videos) {
         .author-name { font-weight: 700; color: var(--text-color); text-decoration: none; font-size: 1rem; }
         .post-date { font-size: 0.85rem; color: var(--text-muted); font-weight: 500; }
 
+        /* ===== 新增：AI 智能摘要區塊樣式 ===== */
+        .ai-summary-box {
+            background: var(--bg-color);
+            border: 1px dashed var(--border-color);
+            border-radius: 20px;
+            padding: 20px;
+            margin-bottom: 30px;
+            transition: all 0.3s ease;
+        }
+        .ai-summary-box.active {
+            border-style: solid;
+            border-color: var(--accent-color);
+            background: var(--accent-soft);
+        }
+        .ai-summary-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .ai-summary-title {
+            font-size: 1.05rem;
+            font-weight: 800;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-color);
+        }
+        .btn-ai-summary {
+            background: var(--header-gradient);
+            color: white;
+            border: none;
+            padding: 8px 18px;
+            border-radius: 12px;
+            font-size: 0.88rem;
+            font-weight: 800;
+            cursor: pointer;
+            transition: 0.2s;
+            box-shadow: 0 4px 12px rgba(99,102,241,0.2);
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn-ai-summary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(99,102,241,0.35);
+        }
+        .ai-summary-body {
+            margin-top: 15px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 15px;
+        }
+        .ai-summary-loading {
+            font-size: 0.95rem;
+            color: var(--text-muted);
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .ai-summary-content {
+            font-size: 1rem;
+            line-height: 1.7;
+            color: var(--text-color);
+        }
+        .ai-summary-content h5 {
+            margin: 12px 0 6px 0;
+            font-size: 0.95rem;
+            font-weight: 800;
+            color: var(--accent-color);
+            text-transform: uppercase;
+        }
+        .ai-summary-content p {
+            margin: 0 0 14px 0;
+        }
+        .ai-summary-content ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+        .ai-summary-content li {
+            margin-bottom: 8px;
+        }
+
         /* 內容區塊 */
         .content-text { font-size: 1.15rem; color: var(--text-color); line-height: 1.8; word-break: break-word; }
         .content-image-wrapper { margin: 30px 0; text-align: center; }
@@ -351,14 +431,14 @@ function renderPostContent($content, $images, $videos) {
             display: flex; align-items: center; gap: 15px;
         }
 
-        /* Modal: 已移除模糊效果，確保輸入時極度順暢 */
+        /* Modal: 已移除模糊效果 */
         #reportModal {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             display: none; justify-content: center; align-items: center; z-index: 2000;
         }
         .modal-overlay {
             position: absolute; top:0; left:0; width:100%; height:100%;
-            background: rgba(0,0,0,0.6); /* 使用純半透明黑色背景 */
+            background: rgba(0,0,0,0.6); 
             z-index: -1; transition: opacity 0.3s;
         }
         .modal-content {
@@ -369,6 +449,21 @@ function renderPostContent($content, $images, $videos) {
         }
         #reportModal.active { display: flex; }
         #reportModal.active .modal-content { transform: scale(1); }
+
+        /* Spinner CSS */
+        .spinner {
+            border: 3px solid rgba(99,102,241,0.2);
+            border-radius: 50%;
+            border-top: 3px solid var(--accent-color);
+            width: 18px;
+            height: 18px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
 
         /* Toast: 優美的提示通知 */
         #toastContainer {
@@ -402,7 +497,6 @@ function renderPostContent($content, $images, $videos) {
                         <img src="<?= !empty($_SESSION['profile_img']) ? "uploads/users_profile_img/".$_SESSION['profile_img'] : "uploads/default_avatar.png" ?>" class="author-avatar" style="width:32px; height:32px;">
                         <span style="<?= $isAdmin ? 'color: var(--admin-color);' : '' ?>"><?= htmlspecialchars($_SESSION["username"]) ?></span>
                     </div>
-                    <!-- 新增「歷史瀏覽紀錄」至 Dropdown-menu 以配合 index.php -->
                     <div class="dropdown-menu" id="dropdownMenu">
                         <div style="padding: 10px 20px; font-size: 0.7rem; color: var(--text-muted); font-weight: 800; text-transform: uppercase;">使用者功能</div>
                         <a href="profile.php?id=<?= $_SESSION['user_id'] ?>">👤 我的個人資料</a>
@@ -436,6 +530,24 @@ function renderPostContent($content, $images, $videos) {
             <div class="meta-info">
                 <a href="profile.php?id=<?= $post['user_id'] ?>" class="author-name"><?= htmlspecialchars($post['username']) ?></a>
                 <span class="post-date"><?= date('Y/m/d H:i', strtotime($post['created_at'])) ?></span>
+            </div>
+        </div>
+
+        <!-- ===== 新增：AI 智能摘要區塊 ===== -->
+        <div class="ai-summary-box" id="aiSummaryBox">
+            <div class="ai-summary-header">
+                <div class="ai-summary-title">
+                    <span>✨</span> AI 智能導讀
+                </div>
+                <button type="button" class="btn-ai-summary" id="aiSummaryBtn" onclick="generateSummary()">
+                    🔮 一鍵生成摘要
+                </button>
+            </div>
+            <div class="ai-summary-body" id="aiSummaryBody" style="display: none;">
+                <div class="ai-summary-loading" id="aiSummaryLoading" style="display: none;">
+                    <span class="spinner"></span> 正在閱讀並提煉文章摘要...
+                </div>
+                <div class="ai-summary-content" id="aiSummaryContent"></div>
             </div>
         </div>
 
@@ -475,7 +587,6 @@ function renderPostContent($content, $images, $videos) {
         <h3 style="margin-top: 0; font-weight: 800;">💬 留言討論</h3>
         
         <?php if (isset($_SESSION["user_id"])): ?>
-            <!-- 原有底部的通用留言輸入框：維持原樣不做任何功能與 ID 破壞 -->
             <div class="comment-form">
                 <form action="includes/comment.inc.php" method="POST">
                     <input type="hidden" name="post_id" value="<?= $post_id ?>">
@@ -501,7 +612,6 @@ function renderPostContent($content, $images, $videos) {
             foreach ($comments as $index => $c): 
                 $floor = $index + 1; 
             ?>
-                <!-- 留言最外層：加入 data-floor 屬性利於動態 DOM 分發 -->
                 <div class="comment-item" id="comment-floor-<?= $floor ?>" data-floor="<?= $floor ?>">
                     <?php $c_img = !empty($c['comment_avatar']) ? "uploads/users_profile_img/".$c['comment_avatar'] : "uploads/default_avatar.png"; ?>
                     <img src="<?= $c_img ?>" class="comment-avatar">
@@ -523,10 +633,7 @@ function renderPostContent($content, $images, $videos) {
                             </div>
                         <?php endif; ?>
 
-                        <!-- 專為本樓設計的行內回覆輸入框容器（預設隱藏） -->
                         <div class="inline-reply-form-container" style="display: none; margin-top: 15px; width: 100%;"></div>
-
-                        <!-- 專為本樓設計的子留言（縮排回覆）存放區 -->
                         <div class="replies-container" style="margin-top: 10px; width: 100%; display: flex; flex-direction: column; gap: 12px;"></div>
                     </div>
                 </div>
@@ -551,12 +658,9 @@ function renderPostContent($content, $images, $videos) {
 
 <script>
     /**
-     * 點擊樓層回覆觸發的互動邏輯 - 改為行內彈出輸入框，不再強行拖拽頁面到最底部
-     * @param {number} floor - 樓層編號
-     * @param {string} username - 該樓層的作者名字
+     * 點擊樓層回覆觸發的互動邏輯
      */
     function replyToFloor(floor, username) {
-        // 先關閉其他可能正開啟的行內回覆框，保持乾淨
         document.querySelectorAll('.inline-reply-form-container').forEach(container => {
             container.style.display = 'none';
             container.innerHTML = '';
@@ -565,10 +669,8 @@ function renderPostContent($content, $images, $videos) {
         const targetComment = document.getElementById(`comment-floor-${floor}`);
         if (!targetComment) return;
 
-        // 讀取動態計算後的視覺樓層編號 (例如 B1、B1-1、B2 等)，確保與使用者視覺上完全一致
         const visualFloor = targetComment.getAttribute('data-visual-floor') || `B${floor}`;
 
-        // 【新增體驗優化】：如果目標樓層含有收合按鈕且目前為隱藏狀態，回覆時自動將其展開，方便閱讀前後文
         const toggler = targetComment.querySelector('.replies-toggle-btn');
         const repliesContainer = targetComment.querySelector('.replies-container');
         if (toggler && repliesContainer && repliesContainer.style.display === 'none') {
@@ -577,11 +679,9 @@ function renderPostContent($content, $images, $videos) {
 
         const inlineContainer = targetComment.querySelector('.inline-reply-form-container');
         if (inlineContainer) {
-            // 動態置入完美相容原本 backend includes/comment.inc.php 的提交表單
             inlineContainer.innerHTML = `
                 <form action="includes/comment.inc.php" method="POST" style="margin-top: 10px; width: 100%;">
                     <input type="hidden" name="post_id" value="<?= $post_id ?>">
-                    <!-- 加上隱藏 prefix。當送出時，自動將 @B{floor} 前綴附加於內文 -->
                     <input type="hidden" name="reply_prefix" value="@B${floor} ">
                     <textarea name="content" rows="2" placeholder="回覆 ${visualFloor} @${username}..." required 
                         style="width: 100%; padding: 12px; border: 2px solid var(--border-color); border-radius: 12px; background: var(--bg-color); color: var(--text-color); box-sizing: border-box; resize: vertical; outline: none; font-family: inherit; font-size: 0.95rem;"></textarea>
@@ -592,7 +692,6 @@ function renderPostContent($content, $images, $videos) {
                 </form>
             `;
             
-            // 監聽行內表單送出事件，在送出前自動組裝好 "@B{floor}" 的前綴字，以符合原有的階梯式回覆資料設計
             const form = inlineContainer.querySelector('form');
             form.addEventListener('submit', function(e) {
                 const textarea = form.querySelector('textarea[name="content"]');
@@ -604,7 +703,6 @@ function renderPostContent($content, $images, $videos) {
 
             inlineContainer.style.display = 'block';
 
-            // 平滑滾動聚焦到剛開啟的輸入框
             const textarea = inlineContainer.querySelector('textarea');
             setTimeout(() => {
                 textarea.focus();
@@ -613,9 +711,6 @@ function renderPostContent($content, $images, $videos) {
         }
     }
 
-    /**
-     * 關閉指定的行內回覆框
-     */
     function closeInlineReply(floor) {
         const targetComment = document.getElementById(`comment-floor-${floor}`);
         if (targetComment) {
@@ -628,29 +723,23 @@ function renderPostContent($content, $images, $videos) {
     }
 
     /**
-     * 核心邏輯：在 DOM 載入後，處理留言的歸類與層級控制
-     * 1. 限制最多一層：將所有帶有「@B{樓層}」的前綴留言歸類至對應的「根留言」下，避免產生多層嵌套。
-     * 2. 收展回覆功能：預設隱藏子留言，並動態新增「查看回覆」按鈕進行切換。
+     * 階梯式留言歸類排版邏輯
      */
     document.addEventListener("DOMContentLoaded", function() {
         const comments = Array.from(document.querySelectorAll('.comment-item'));
         
-        // 第一階段：扁平化分配（最多一層縮排）
         comments.forEach(comment => {
             const contentEl = comment.querySelector('.comment-content');
             if (!contentEl) return;
 
             const htmlContent = contentEl.innerHTML.trim();
-            // 匹配開頭可能帶有空白或換行符的 @B{數字} 格式
             const match = htmlContent.match(/^@B(\d+)(?:\s|<br\s*\/?>)*/i);
             
             if (match) {
                 const targetFloorNum = parseInt(match[1]);
                 let parentComment = document.getElementById(`comment-floor-${targetFloorNum}`);
                 
-                // 防止自己回覆自己造成的無限自嵌套
                 if (parentComment && parentComment !== comment) {
-                    // 【關鍵修正】：如果目標母留言本身也是一個子回覆 (nested-reply)，則向上追溯至最頂層的根留言
                     while (parentComment && parentComment.classList.contains('nested-reply')) {
                         const closestParent = parentComment.parentElement.closest('.comment-item');
                         if (closestParent) {
@@ -661,13 +750,9 @@ function renderPostContent($content, $images, $videos) {
                     }
 
                     if (parentComment && parentComment !== comment) {
-                        // 清理顯示的 @B{N} 字樣，使畫面像精巧的階梯對話般精緻乾淨
                         contentEl.innerHTML = htmlContent.replace(/^@B\d+(?:\s|<br\s*\/?>)*/i, '');
-                        
-                        // 加上縮排與線條裝飾的樣式類別
                         comment.classList.add('nested-reply');
                         
-                        // 置入目標根留言的專屬回覆放置區中
                         const repliesContainer = parentComment.querySelector('.replies-container');
                         if (repliesContainer) {
                             repliesContainer.appendChild(comment);
@@ -677,33 +762,25 @@ function renderPostContent($content, $images, $videos) {
             }
         });
 
-        // 第二階段：【動態修正】重算並重新分配視覺樓層徽章 (避免在有子留言時，新的根留言發生跳號現象)
         const rootComments = document.querySelectorAll('.comment-item:not(.nested-reply)');
         rootComments.forEach((comment, rootIdx) => {
-            // 計算真正的根留言樓層 (B1, B2, B3...)
             const visualRootFloorNum = rootIdx + 1;
             const visualRootFloorStr = `B${visualRootFloorNum}`;
             
-            // 存入 data-visual-floor 以便 replyToFloor 讀取正確提示文字
             comment.setAttribute('data-visual-floor', visualRootFloorStr);
             
-            // 更新根留言的 badge 視覺顯示
             const badge = comment.querySelector('.comment-floor-badge');
             if (badge) {
                 badge.textContent = visualRootFloorStr;
             }
 
-            // 更新其下的子回覆留言 (B1-1, B1-2, B1-3...)
             const repliesContainer = comment.querySelector('.replies-container');
             if (repliesContainer) {
                 const nestedReplies = Array.from(repliesContainer.children);
                 nestedReplies.forEach((reply, replyIdx) => {
                     const visualReplyFloorStr = `B${visualRootFloorNum}-${replyIdx + 1}`;
-                    
-                    // 存入 data-visual-floor 以便 replyToFloor 讀取
                     reply.setAttribute('data-visual-floor', visualReplyFloorStr);
                     
-                    // 更新子留言的 badge 視覺顯示
                     const replyBadge = reply.querySelector('.comment-floor-badge');
                     if (replyBadge) {
                         replyBadge.textContent = visualReplyFloorStr;
@@ -712,16 +789,12 @@ function renderPostContent($content, $images, $videos) {
             }
         });
 
-        // 第三階段：為含有子留言的根留言建立「查看回覆」的展開收合按鈕
         rootComments.forEach(comment => {
             const repliesContainer = comment.querySelector('.replies-container');
             if (repliesContainer && repliesContainer.children.length > 0) {
                 const replyCount = repliesContainer.children.length;
-                
-                // 預設將回覆內容完全隱藏
                 repliesContainer.style.display = 'none';
 
-                // 動態建立切換按鈕
                 const toggleBtn = document.createElement('button');
                 toggleBtn.type = 'button';
                 toggleBtn.className = 'replies-toggle-btn';
@@ -743,7 +816,6 @@ function renderPostContent($content, $images, $videos) {
                 `;
                 toggleBtn.innerHTML = `💬 查看回覆 (${replyCount})`;
 
-                // 註冊切換展開/收合事件
                 toggleBtn.addEventListener('click', function() {
                     if (repliesContainer.style.display === 'none') {
                         repliesContainer.style.display = 'flex';
@@ -758,16 +830,121 @@ function renderPostContent($content, $images, $videos) {
                     }
                 });
 
-                // 將收合按鈕插入至回覆存放區（replies-container）的正上方
                 repliesContainer.parentNode.insertBefore(toggleBtn, repliesContainer);
             }
         });
     });
 
     /**
+     * ===== 新增：AI 一鍵生成摘要互動 JS 控制 =====
+     */
+    let isGeneratingSummary = false;
+    let summaryCache = null; // 本地快取，避免重複呼叫浪費 Token
+
+    async function generateSummary() {
+        if (isGeneratingSummary) return;
+
+        const aiSummaryBox = document.getElementById('aiSummaryBox');
+        const aiSummaryBody = document.getElementById('aiSummaryBody');
+        const aiSummaryLoading = document.getElementById('aiSummaryLoading');
+        const aiSummaryContent = document.getElementById('aiSummaryContent');
+        const aiSummaryBtn = document.getElementById('aiSummaryBtn');
+
+        // 展開導讀區塊
+        aiSummaryBody.style.display = 'block';
+        aiSummaryBox.classList.add('active');
+
+        // 如果先前已經生成過，直接顯示快取，不重複呼叫
+        if (summaryCache) {
+            aiSummaryContent.style.display = 'block';
+            aiSummaryLoading.style.display = 'none';
+            return;
+        }
+
+        // 抓取網頁上的真實標題與文字內文
+        const titleText = document.querySelector('h1.post-title').innerText;
+        // 抓取內文，並排除 img 和 video 標籤，純化成純文字
+        const rawContentEl = document.querySelector('.post-content-body').cloneNode(true);
+        // 清除多餘 HTML 以免干擾摘要
+        const cleanContent = rawContentEl.innerText.replace(/\[img\d+\]/gi, '').trim();
+
+        isGeneratingSummary = true;
+        aiSummaryLoading.style.display = 'flex';
+        aiSummaryContent.innerHTML = '';
+        aiSummaryBtn.disabled = true;
+        aiSummaryBtn.style.opacity = '0.6';
+
+        try {
+            const response = await fetch('api_ai_summary.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    title: titleText,
+                    content: cleanContent
+                })
+            });
+
+            const data = await response.json();
+            aiSummaryLoading.style.display = 'none';
+
+            if (data && data.summary) {
+                summaryCache = data.summary;
+                // 使用優雅的逐字打字效果 (Typewriter Effect)
+                typeOutSummary(data.summary);
+            } else {
+                aiSummaryContent.innerHTML = `<span style="color:var(--danger-color); font-weight:700;">⚠️ ${data.error || '摘要生成失敗，請稍後重試。'}</span>`;
+            }
+        } catch (error) {
+            aiSummaryLoading.style.display = 'none';
+            aiSummaryContent.innerHTML = '<span style="color:var(--danger-color); font-weight:700;">⚠️ 網路連線超時或失敗，請檢查系統配置。</span>';
+        } finally {
+            isGeneratingSummary = false;
+            aiSummaryBtn.disabled = false;
+            aiSummaryBtn.style.opacity = '1';
+        }
+    }
+
+    // 模擬 AI 逐字渲染 HTML 摘要成果的打字機效果
+    function typeOutSummary(fullHTMLText) {
+        const contentDiv = document.getElementById('aiSummaryContent');
+        contentDiv.innerHTML = '';
+        contentDiv.style.display = 'block';
+
+        let index = 0;
+        let currentHTML = "";
+        const speed = 10; // 每 10 毫秒跑一次字元，維持高流暢度
+
+        // 由於 HTML 內含標籤，若直接用 substring 一字字拼湊會導致 HTML 標籤不完整而破圖。
+        // 我們採用臨時隱藏渲染的方法，或直接以快速打字機特效安全呈現 HTML
+        const interval = setInterval(() => {
+            if (index < fullHTMLText.length) {
+                // 如果遇到 HTML 標籤 '<'，直接一口氣跑到 '>' 結束，避免中途顯示未閉合標籤
+                if (fullHTMLText.charAt(index) === '<') {
+                    const tagEndIndex = fullHTMLText.indexOf('>', index);
+                    if (tagEndIndex !== -1) {
+                        currentHTML += fullHTMLText.substring(index, tagEndIndex + 1);
+                        index = tagEndIndex + 1;
+                    } else {
+                        currentHTML += fullHTMLText.charAt(index);
+                        index++;
+                    }
+                } else {
+                    currentHTML += fullHTMLText.charAt(index);
+                    index++;
+                }
+                contentDiv.innerHTML = currentHTML;
+                // 滾動確保檢視通暢
+                document.getElementById('aiSummaryBox').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            } else {
+                clearInterval(interval);
+            }
+        }, speed);
+    }
+
+    /**
      * 自定義 Toast 通知函數
-     * @param {string} message - 顯示內容
-     * @param {string} type - 'success' 或 'error'
      */
     function showToast(message, type = 'success') {
         const container = document.getElementById('toastContainer');
@@ -778,10 +955,8 @@ function renderPostContent($content, $images, $videos) {
         toast.innerHTML = `<span>${icon}</span> <span>${message}</span>`;
         container.appendChild(toast);
         
-        // 觸發進場動畫
         setTimeout(() => toast.classList.add('show'), 10);
         
-        // 3秒後移除
         setTimeout(() => {
             toast.classList.remove('show');
             setTimeout(() => toast.remove(), 300);

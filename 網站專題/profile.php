@@ -317,6 +317,7 @@ try {
             --admin-color: #f59e0b;
             --admin-soft: rgba(245, 158, 11, 0.15);
             --danger-color: #ef4444;
+            --danger-soft: rgba(239, 68, 68, 0.1);
             --success-color: #22c55e;
         }
 
@@ -329,6 +330,7 @@ try {
             --border-color: #334155;
             --sidebar-item-hover: #334155;
             --accent-soft: rgba(99, 102, 241, 0.2);
+            --danger-soft: rgba(239, 68, 68, 0.15);
         }
 
         body { 
@@ -408,12 +410,14 @@ try {
         .avatar-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; color: white; opacity: 0; transition: 0.3s; pointer-events: none; font-size: 1.5rem; }
         .editable-avatar:hover .avatar-overlay { opacity: 1; }
 
-        .profile-actions { display: flex; gap: 10px; margin-bottom: 10px; }
+        .profile-actions { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
 
-        .action-btn { padding: 10px 20px; border-radius: 12px; font-weight: 700; border: none; cursor: pointer; text-decoration: none; font-size: 0.9rem; transition: 0.2s; }
+        .action-btn { padding: 10px 20px; border-radius: 12px; font-weight: 700; border: none; cursor: pointer; text-decoration: none; font-size: 0.9rem; transition: 0.2s; display: inline-flex; align-items: center; gap: 6px; }
         .btn-primary { background: var(--accent-color); color: white; }
         .btn-outline { background: transparent; border: 1.5px solid var(--border-color); color: var(--text-color); }
         .btn-outline:hover { background: var(--sidebar-item-hover); }
+        .btn-danger { background: transparent; border: 1.5px solid var(--danger-color); color: var(--danger-color); }
+        .btn-danger:hover { background: var(--danger-soft); }
 
         .profile-bio { padding: 0 40px 40px 40px; }
         .bio-text { color: var(--text-muted); line-height: 1.6; max-width: 600px; }
@@ -431,7 +435,7 @@ try {
         .badge-inline { background: var(--danger-color); color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; margin-left: auto; font-weight: 800; }
         .badge-count { background: var(--border-color); color: var(--text-color); font-size: 0.75rem; padding: 2px 10px; border-radius: 10px; margin-left: auto; font-weight: 700; transition: background 0.3s, color 0.3s; }
 
-        /* --- 新增：個人詳細資料卡樣式 --- */
+        /* 個人詳細資料卡樣式 */
         .profile-details-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
@@ -508,6 +512,51 @@ try {
             border-radius: 8px;
         }
 
+        /* 刪除好友確認 Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-overlay.active {
+            display: flex;
+        }
+        .modal-box {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 35px 40px;
+            max-width: 400px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+            text-align: center;
+        }
+        .modal-icon {
+            font-size: 2.5rem;
+            margin-bottom: 15px;
+        }
+        .modal-title {
+            font-size: 1.2rem;
+            font-weight: 800;
+            margin-bottom: 10px;
+            color: var(--text-color);
+        }
+        .modal-desc {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            line-height: 1.6;
+            margin-bottom: 25px;
+        }
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+        }
+
         @media (max-width: 900px) {
             .main-wrapper { grid-template-columns: 1fr; }
             .left-sidebar { display: block; margin-bottom: 15px; }
@@ -564,6 +613,21 @@ try {
     </div>
 </header>
 
+<!-- 刪除好友確認 Modal -->
+<div class="modal-overlay" id="removeFriendModal">
+    <div class="modal-box">
+        <div class="modal-icon">🗑️</div>
+        <div class="modal-title">確定要刪除好友嗎？</div>
+        <div class="modal-desc">
+            刪除後將解除雙方的好友關係，<br>若想重新成為好友需要再次送出申請。
+        </div>
+        <div class="modal-actions">
+            <button class="action-btn btn-danger" id="confirmRemoveBtn">確認刪除</button>
+            <button class="action-btn btn-outline" onclick="closeRemoveModal()">取消</button>
+        </div>
+    </div>
+</div>
+
 <div class="main-wrapper">
     <aside class="left-sidebar">
         <div class="menu-label">個人檔案選單</div>
@@ -587,6 +651,7 @@ try {
                 if($_GET['success'] == 'interests') $success_text = "興趣嗜好更新成功！";
                 if($_GET['success'] == 'location') $success_text = "居住地更新成功！";
                 if($_GET['success'] == 'banner') $success_text = "背景圖片更新成功！";
+                if($_GET['success'] == 'removed') $success_text = "已成功刪除好友。";
             ?>
             <div style="background:var(--success-color); color:white; padding:15px; border-radius:12px; margin-bottom:20px; font-weight:600;">✅ <?= $success_text ?></div>
         <?php endif; ?>
@@ -635,6 +700,8 @@ background-repeat: no-repeat;
                             <?php if ($friend_status === 'accepted'): ?>
                                 <span class="action-btn" style="background:var(--success-color); color:white; cursor:default;">✔️ 已是好友</span>
                                 <a href="chat.php?user_id=<?= $target_user_id ?>" class="action-btn btn-primary">💬 發送私訊</a>
+                                <!-- ✅ 新增：刪除好友按鈕 -->
+                                <button class="action-btn btn-danger" onclick="openRemoveModal(<?= $target_user_id ?>)">🗑️ 刪除好友</button>
                             <?php elseif ($friend_status === 'pending_sent'): ?>
                                 <button class="action-btn btn-outline" disabled>⏳ 已送出請求</button>
                             <?php elseif ($friend_status === 'pending_received'): ?>
@@ -680,7 +747,7 @@ background-repeat: no-repeat;
                     </form>
                 <?php endif; ?>
 
-                <!-- --- 新增：個人詳細資料卡片 --- -->
+                <!-- 個人詳細資料卡片 -->
                 <h3 style="margin: 30px 0 15px 0; font-size: 1.2rem; font-weight: 800; border-top: 1px solid var(--border-color); padding-top: 25px;">📋 個人詳細資料</h3>
                 <div class="profile-details-grid">
                     <!-- 年齡 -->
@@ -793,7 +860,6 @@ background-repeat: no-repeat;
                         <h2 style="margin:12px 0;"><a href="view_post.php?id=<?= $post['id'] ?>" style="text-decoration:none; color:var(--text-color); font-weight:800;"><?= htmlspecialchars($post['title']) ?></a></h2>
                         <div style="color:var(--text-muted); font-size:0.9rem; margin-bottom:10px; display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
                             <span>📅 發布於 <?= date('Y/m/d H:i', strtotime($post['created_at'])) ?></span>
-                            <!-- 新增讚數顯示 -->
                             <span style="display: flex; align-items: center; gap: 4px; color: var(--danger-color); font-weight: 700;">
                                 ❤️ <?= (int)($post['like_count']) ?> 個讚
                             </span>
@@ -834,25 +900,21 @@ background-repeat: no-repeat;
             if (!userTrigger.contains(e.target)) dropdownMenu.classList.remove('active');
         });
     }
-        // Banner 上傳觸發
+
+    // Banner 上傳觸發
     const bannerBox = document.getElementById('bannerBox');
     const bannerInput = document.getElementById('bannerInput');
     const bannerForm = document.getElementById('bannerForm');
 
     if (bannerBox && bannerInput) {
-
         bannerBox.onclick = () => bannerInput.click();
-
         bannerInput.onchange = () => {
-
             if (bannerInput.value) {
-
                 bannerForm.submit();
-
             }
-
         };
-    }            
+    }
+
     // 編輯大頭照觸發
     const avatarBox = document.getElementById('avatarBox');
     const avatarInput = document.getElementById('avatarInput');
@@ -887,7 +949,7 @@ background-repeat: no-repeat;
         };
     }
 
-    // --- 新增：切換詳細資料的編輯狀態 ---
+    // 切換詳細資料的編輯狀態
     function toggleDetailEdit(field) {
         const valueDiv = document.getElementById('val' + field);
         const formEl = document.getElementById('form' + field);
@@ -903,7 +965,7 @@ background-repeat: no-repeat;
         }
     }
 
-    // --- 新增：動態分頁切換互動邏輯 ---
+    // 動態分頁切換互動邏輯
     const tabBio = document.getElementById('tabBio');
     const tabPosts = document.getElementById('tabPosts');
     const bioTabContent = document.getElementById('bioTabContent');
@@ -911,10 +973,8 @@ background-repeat: no-repeat;
     const postCountBadge = document.getElementById('postCountBadge');
 
     if (tabBio && tabPosts && bioTabContent && postsTabContent) {
-        // 用戶簡介分頁
         tabBio.onclick = (e) => {
             e.preventDefault();
-            // 切換左側選單高亮狀態
             tabBio.style.background = 'var(--accent-soft)';
             tabBio.style.color = 'var(--accent-color)';
             tabPosts.style.background = 'transparent';
@@ -923,22 +983,17 @@ background-repeat: no-repeat;
                 postCountBadge.style.background = 'var(--border-color)';
                 postCountBadge.style.color = 'var(--text-color)';
             }
-            
-            // 顯示/隱藏對應內容區
             bioTabContent.style.display = 'block';
             postsTabContent.style.display = 'none';
             if (toggleEditBtn) {
                 toggleEditBtn.style.display = 'inline-block';
             }
-            // 重置個人檔案編輯為非編輯模式
             if (bioDisplay) bioDisplay.style.display = 'block';
             if (bioEditForm) bioEditForm.style.display = 'none';
         };
 
-        // 歷史發文紀錄分頁
         tabPosts.onclick = (e) => {
             e.preventDefault();
-            // 切換左側選單高亮狀態
             tabPosts.style.background = 'var(--accent-soft)';
             tabPosts.style.color = 'var(--accent-color)';
             tabBio.style.background = 'transparent';
@@ -947,12 +1002,41 @@ background-repeat: no-repeat;
                 postCountBadge.style.background = 'var(--accent-color)';
                 postCountBadge.style.color = 'white';
             }
-            
-            // 顯示/隱藏對應內容區
             bioTabContent.style.display = 'none';
             postsTabContent.style.display = 'block';
             if (toggleEditBtn) {
                 toggleEditBtn.style.display = 'none';
+            }
+        };
+    }
+
+    // ✅ 新增：刪除好友 Modal 邏輯
+    const removeFriendModal = document.getElementById('removeFriendModal');
+    const confirmRemoveBtn = document.getElementById('confirmRemoveBtn');
+    let removeFriendTargetId = null;
+
+    function openRemoveModal(friendId) {
+        removeFriendTargetId = friendId;
+        removeFriendModal.classList.add('active');
+    }
+
+    function closeRemoveModal() {
+        removeFriendModal.classList.remove('active');
+        removeFriendTargetId = null;
+    }
+
+    // 點擊 Modal 背景關閉
+    removeFriendModal.addEventListener('click', function(e) {
+        if (e.target === removeFriendModal) {
+            closeRemoveModal();
+        }
+    });
+
+    // 確認刪除：導向 friend_action.inc.php
+    if (confirmRemoveBtn) {
+        confirmRemoveBtn.onclick = () => {
+            if (removeFriendTargetId) {
+                window.location.href = 'includes/friend_action.inc.php?friend_id=' + removeFriendTargetId + '&action=toggle';
             }
         };
     }
