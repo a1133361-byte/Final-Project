@@ -2,6 +2,27 @@
 header('Content-Type: application/json; charset=utf-8');
 session_start();
 
+/**
+ * 簡易版 .env 讀取函數 (無需 Composer)
+ * 讀取並將環境變數載入到系統環境中
+ */
+function loadEnv($path) {
+    if (!file_exists($path)) return;
+    $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($lines as $line) {
+        if (strpos(trim($line), '#') === 0) continue; // 跳過註解
+        if (strpos($line, '=') === false) continue;   // 確保有等號
+        list($name, $value) = explode('=', $line, 2);
+        $name = trim($name);
+        $value = trim($value);
+        putenv("$name=$value");
+        $_ENV[$name] = $value;
+    }
+}
+
+// 載入 .env 檔案
+loadEnv(__DIR__ . '/.env');
+
 // 僅限 POST 存取
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['error' => 'Method Not Allowed']);
@@ -18,12 +39,12 @@ if (empty($postTitle) || empty($postContent)) {
     exit();
 }
 
-// API 金鑰配置 (優先讀取環境變數)
+// API 金鑰配置：優先自系統環境變數讀取。
 $apiKey = getenv('GEMINI_API_KEY') ?: ($_ENV['GEMINI_API_KEY'] ?? ""); 
 
 if (empty($apiKey)) {
-    // 💡 這裡保留了您填入的 API Key
-    $apiKey = ""; 
+    echo json_encode(['error' => '抱歉，系統設定錯誤：未找到 API 金鑰，請確認環境設定。']);
+    exit();
 }
 
 // ── 核心系統提示詞：限制格式為極簡大綱 ──
@@ -73,7 +94,7 @@ $lastCurlError = "";
 $httpCode = 0;
 
 for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
-    // 💡 核心安全修復：使用 PHP 字串拼接構造網址，徹底繞過 Markdown 渲染器的 auto-link 超連結干擾 bug！
+    // 使用 PHP 字串拼接構造網址，徹底繞過 Markdown 渲染器的 auto-link 超連結干擾
     $scheme = "https:";
     $domain = "generativelanguage.googleapis.com";
     $path = "/v1beta/models/gemini-2.5-flash:generateContent?key=";

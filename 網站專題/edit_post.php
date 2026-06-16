@@ -182,48 +182,73 @@ try {
         }
 
         select,
-        input[type="text"],
-        textarea {
-            width: 100%;
+        input[type="text"]{
+            width:100%;
 
-            border: 1px solid var(--border-color);
-            background: var(--input-bg);
-            color: var(--text-color);
+            border:1px solid var(--border-color);
+            background:var(--input-bg);
+            color:var(--text-color);
 
-            border-radius: 16px;
+            border-radius:16px;
 
-            padding: 14px 16px;
+            padding:14px 16px;
 
-            font-size: .96rem;
-            font-family: inherit;
+            font-size:.96rem;
+            font-family:inherit;
 
-            transition: .2s;
-        }
-
-        textarea {
-            resize: vertical;
-            min-height: 250px;
-            line-height: 1.6;
+            transition:.2s;
         }
 
         select:focus,
         input[type="text"]:focus,
-        textarea:focus {
-            outline: none;
-            border-color: var(--accent-color);
-            box-shadow: 0 0 0 4px var(--accent-soft);
+        .rich-editor:focus{
+            outline:none;
+            border-color:var(--accent-color);
+            box-shadow:0 0 0 4px var(--accent-soft);
         }
 
-        /* Attachment & Image Management Box */
+        /* Rich Editor */
+        .rich-editor {
+            width:100%;
+            min-height:300px;
+            border:1px solid var(--border-color);
+            background:var(--input-bg);
+            color:var(--text-color);
+            border-radius:16px;
+            padding:14px 16px;
+            font-size:.96rem;
+            font-family:inherit;
+            line-height:1.7;
+            overflow-y:auto;
+            transition:.2s;
+        }
+
+        .rich-editor img,
+        .rich-editor video {
+            max-width: 100%;
+            max-height: 400px;
+            display: block;
+            margin: 10px 0;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+        }
+
+        /* Attachment Box */
         .attach-box{
             margin-top:18px;
             background:var(--bg-color);
             border:1px solid var(--border-color);
             border-radius:20px;
             padding:18px;
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            flex-wrap:wrap;
+            gap:15px;
         }
 
         .img-management-section {
+            width: 100%;
             display: flex;
             flex-direction: column;
             gap: 15px;
@@ -303,12 +328,12 @@ try {
         }
 
         .attachment-controls{
+            width: 100%;
             display:flex;
             flex-wrap:wrap;
             justify-content: space-between;
             align-items: center;
             gap:15px;
-            margin-top: 15px;
         }
 
         .btn-upload-group {
@@ -498,7 +523,6 @@ try {
             min-height: 250px;
             max-height: 400px;
             overflow-y: auto;
-            white-space: pre-wrap; /* 保持換行格式 */
         }
         .modal-footer {
             padding: 20px 24px;
@@ -565,7 +589,6 @@ try {
 
 <div class="main-wrapper">
 
-    <!-- Main -->
     <main>
 
         <section class="form-card">
@@ -583,7 +606,6 @@ try {
                 <form id="editForm" action="includes/edit_post.inc.php" method="POST" enctype="multipart/form-data">
                     <input type="hidden" name="post_id" value="<?= $post['id'] ?>">
 
-                    <!-- Category -->
                     <div class="form-group">
                         <label>📚 選擇看板</label>
                         <select name="category_id" required>
@@ -595,48 +617,41 @@ try {
                         </select>
                     </div>
 
-                    <!-- Title -->
                     <div class="form-group">
                         <label>📝 文章標題</label>
                         <input type="text" name="title" value="<?= htmlspecialchars($post['title']) ?>" required>
                     </div>
 
-                    <!-- Content -->
                     <div class="form-group">
-                        <label>📖 文章內容 (維持 [imgX] 標籤可顯示圖片)</label>
-                        <textarea id="postContent" name="content" required><?= htmlspecialchars($post['content']) ?></textarea>
+                        <label>📖 文章內容</label>
+                        
+                        <div id="postContentEditor" 
+                             class="rich-editor" 
+                             contenteditable="true" 
+                             placeholder="輸入你的內容..."><?= $post['content'] ?></div>
+                        
+                        <textarea name="content" id="hiddenContent" style="display:none;"></textarea>
                     </div>
 
-                    <!-- Image Management -->
                     <div class="form-group">
                         <label>🎨 圖片與媒體管理</label>
                         <div class="attach-box">
-                            <div class="img-management-section">
-                                <small style="color:var(--text-muted); font-weight:800;">現有圖片 (點擊 ✕ 標記刪除)：</small>
-                                <div class="preview-grid" id="existingPhotosPreview">
-                                    <?php foreach ($existing_images as $index => $img): ?>
-                                        <div class="preview-item" id="old-img-container-<?= $img['id'] ?>">
-                                            <img src="uploads/post_imgs/<?= $img['image_path'] ?>">
-                                            <span class="preview-tag">[img<?= $index+1 ?>]</span>
-                                            <button type="button" class="remove-btn" onclick="toggleDeleteOldImage(<?= $img['id'] ?>)">✕</button>
-                                            <input type="checkbox" name="delete_imgs[]" value="<?= $img['id'] ?>" id="delete-check-<?= $img['id'] ?>" style="display:none;">
-                                        </div>
-                                    <?php endforeach; ?>
-                                </div>
-
-                                <hr style="border:0; border-top:1px solid var(--border-color); margin:10px 0;">
-                                
-                                <small style="color:var(--text-muted); font-weight:800;">追加新圖片：</small>
-                                <div class="preview-grid" id="newPhotosPreview"></div>
-                            </div>
-
+                            
                             <div class="attachment-controls">
                                 <div class="btn-upload-group">
-                                    <label for="newImgInput" class="btn-control">📷 選擇相片</label>
-                                    <input type="file" id="newImgInput" accept="image/*" multiple style="display:none;">
+                                    <button type="button"
+                                            class="btn-control"
+                                            onclick="document.getElementById('newImgInput').click()">
+                                        📷 插入圖片
+                                    </button>
+
+                                    <button type="button"
+                                            class="btn-control"
+                                            onclick="document.getElementById('newVidInput').click()">
+                                        🎬 插入影片
+                                    </button>
                                 </div>
 
-                                <!-- ===== 新增：AI 文章潤色工具列 ===== -->
                                 <div class="ai-controls">
                                     <select id="aiStyleSelect" class="style-select" title="選擇修飾風格">
                                         <option value="professional">🛡️ 專業職場</option>
@@ -649,13 +664,24 @@ try {
                                     </button>
                                 </div>
                             </div>
+
+                            <input type="file"
+                                   id="newImgInput"
+                                   accept="image/*"
+                                   multiple
+                                   style="display:none;">
+
+                            <input type="file"
+                                   id="newVidInput"
+                                   accept="video/mp4,video/webm,video/ogg"
+                                   multiple
+                                   style="display:none;">
                         </div>
                     </div>
 
-                    <!-- 存放新選取檔案的隱藏欄位 -->
                     <input type="file" name="new_post_imgs[]" id="hiddenNewFiles" multiple style="display:none;">
+                    <input type="file" name="new_post_vids[]" id="hiddenNewVids" multiple style="display:none;">
 
-                    <!-- Buttons -->
                     <div class="button-group">
                         <a href="view_post.php?id=<?= $post_id ?>" class="btn-cancel">
                             取消修改
@@ -674,7 +700,6 @@ try {
 
 </div>
 
-<!-- ===== 新增：AI 潤色對比確認彈窗 ===== -->
 <div class="modal-overlay" id="polishModal">
     <div class="modal">
         <div class="modal-header">
@@ -699,18 +724,81 @@ try {
 </div>
 
 <script>
-    let newFilesArray = [];
-    const newImgInput = document.getElementById('newImgInput');
-    const newPhotosPreview = document.getElementById('newPhotosPreview');
-    const hiddenNewFiles = document.getElementById('hiddenNewFiles');
-    const postContent = document.getElementById('postContent');
-    const existingCount = <?= count($existing_images) ?>;
+/* =========================
+    Theme 主題切換控制
+========================= */
+const themeBtn = document.getElementById('themeBtn');
+const currentTheme = localStorage.getItem('theme') || 'light';
 
-    // --- 1. 處理舊圖片的刪除標記 ---
-    function toggleDeleteOldImage(imgId) {
-        const container = document.getElementById(`old-img-container-${imgId}`);
-        const checkbox = document.getElementById(`delete-check-${imgId}`);
+document.body.setAttribute('data-theme', currentTheme);
+
+themeBtn.onclick = () => {
+    const targetTheme =
+        document.body.getAttribute('data-theme') === 'dark'
+        ? 'light'
+        : 'dark';
+
+    document.body.setAttribute('data-theme', targetTheme);
+    localStorage.setItem('theme', targetTheme);
+};
+
+/* =========================
+    Editor & Files (新圖片/影片即時預覽與嵌入)
+========================= */
+let newImgList = [];
+let newVidList = [];
+
+const editor = document.getElementById('postContentEditor');
+
+// 初始化 Placeholder 效果
+if (editor.innerText.trim() === '') {
+    editor.innerHTML = '<span style="color: var(--text-muted);" id="placeholderSpan">輸入你的內容...</span>';
+}
+editor.addEventListener('focus', function() {
+    const placeholder = document.getElementById('placeholderSpan');
+    if (placeholder) {
+        editor.innerHTML = '';
+    }
+});
+editor.addEventListener('blur', function() {
+    if (editor.innerText.trim() === '') {
+        editor.innerHTML = '<span style="color: var(--text-muted);" id="placeholderSpan">輸入你的內容...</span>';
+    }
+});
+
+// 在游標處插入 HTML 節點的函式
+function insertElementAtCursor(el) {
+    editor.focus();
+    const sel = window.getSelection();
+    if (sel.getRangeAt && sel.rangeCount) {
+        let range = sel.getRangeAt(0);
         
+        // 如果目前還在 placeholder 狀態則清空
+        const placeholder = document.getElementById('placeholderSpan');
+        if (placeholder) {
+            editor.innerHTML = '';
+            range = sel.getRangeAt(0);
+        }
+        
+        range.deleteContents();
+        range.insertNode(el);
+        
+        range = range.cloneRange();
+        range.setStartAfter(el);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+    } else {
+        editor.appendChild(el);
+    }
+}
+
+/* 舊圖片的刪除標記互動 (保留函式以避免外部調用報錯) */
+function toggleDeleteOldImage(imgId) {
+    const container = document.getElementById(`old-img-container-${imgId}`);
+    const checkbox = document.getElementById(`delete-check-${imgId}`);
+    
+    if (checkbox && container) {
         if (!checkbox.checked) {
             checkbox.checked = true;
             container.classList.add('to-delete');
@@ -719,138 +807,159 @@ try {
             container.classList.remove('to-delete');
         }
     }
+}
 
-    // --- 2. 處理追加新圖片 ---
-    newImgInput.addEventListener('change', function() {
-        const files = Array.from(this.files);
-        files.forEach(file => {
-            newFilesArray.push(file);
-            const newTagIndex = existingCount + newFilesArray.length;
-            postContent.value += `\n[img${newTagIndex}]\n`;
-        });
-        renderNewPreviews();
-        this.value = ''; 
+/* 新相片追加與直接嵌入編輯器 */
+document.getElementById('newImgInput').addEventListener('change', function(){
+    Array.from(this.files).forEach(file => {
+        newImgList.push(file);
+        const fileIndex = newImgList.length - 1;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const img = document.createElement('img');
+            img.src = e.target.result;
+            img.dataset.type = 'new_img';
+            img.dataset.index = fileIndex;
+            insertElementAtCursor(img);
+        };
+        reader.readAsDataURL(file);
     });
+    this.value = '';
+});
 
-    function renderNewPreviews() {
-        newPhotosPreview.innerHTML = '';
-        newFilesArray.forEach((file, index) => {
-            const reader = new FileReader();
-            const tagIndex = existingCount + index + 1;
-            reader.onload = function(e) {
-                const div = document.createElement('div');
-                div.className = 'preview-item';
-                div.innerHTML = `
-                    <img src="${e.target.result}">
-                    <span class="preview-tag">[img${tagIndex}]</span>
-                    <button type="button" class="remove-btn" onclick="removeNewImage(${index})">✕</button>
-                `;
-                newPhotosPreview.appendChild(div);
-            }
-            reader.readAsDataURL(file);
-        });
-    }
+/* 新影片追加與直接嵌入編輯器 */
+document.getElementById('newVidInput').addEventListener('change', function(){
+    Array.from(this.files).forEach(file => {
+        newVidList.push(file);
+        const fileIndex = newVidList.length - 1;
 
-    window.removeNewImage = function(index) {
-        newFilesArray.splice(index, 1);
-        renderNewPreviews();
-    };
-
-    // --- 3. 表單送出前同步 DataTransfer ---
-    document.getElementById('editForm').addEventListener('submit', function() {
-        const dt = new DataTransfer();
-        newFilesArray.forEach(file => dt.items.add(file));
-        hiddenNewFiles.files = dt.files;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const video = document.createElement('video');
+            video.src = e.target.result;
+            video.controls = true;
+            video.dataset.type = 'new_vid';
+            video.dataset.index = fileIndex;
+            insertElementAtCursor(video);
+        };
+        reader.readAsDataURL(file);
     });
+    this.value = '';
+});
 
-    // --- 4. AI 文章潤色互動邏輯 ---
-    const polishModal = document.getElementById('polishModal');
-    const originalTextContent = document.getElementById('originalTextContent');
-    const polishedTextContent = document.getElementById('polishedTextContent');
-    const aiPolishBtn = document.getElementById('aiPolishBtn');
-    let polishedResultHTML = ""; // 保存 AI 回傳的修飾成果
+/* =========================
+    AI 文章潤色互動邏輯
+========================= */
+const polishModal = document.getElementById('polishModal');
+const originalTextContent = document.getElementById('originalTextContent');
+const polishedTextContent = document.getElementById('polishedTextContent');
+const aiPolishBtn = document.getElementById('aiPolishBtn');
+let polishedResultHTML = ""; // 儲存 AI 潤色完成後的完整 HTML
 
-    async function polishArticle() {
-        const currentContent = postContent.value.trim();
-        if (currentContent === '') {
-            alert("請先輸入一些文章內容再進行 AI 潤色喔！✍️");
-            return;
-        }
-
-        const selectedStyle = document.getElementById('aiStyleSelect').value;
-
-        // 進入載入狀態
-        aiPolishBtn.disabled = true;
-        const originalBtnText = aiPolishBtn.innerHTML;
-        aiPolishBtn.innerHTML = `<span class="spinner"></span> 魔法修飾中...`;
-
-        try {
-            // 與共用的 api_ai_polish.php 通訊
-            const response = await fetch('api_ai_polish.php', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    content: currentContent,
-                    style: selectedStyle
-                })
-            });
-
-            const data = await response.json();
-            
-            if (data && data.polished_content) {
-                polishedResultHTML = data.polished_content;
-
-                // 渲染至對比彈窗
-                originalTextContent.textContent = currentContent;
-                polishedTextContent.textContent = polishedResultHTML;
-
-                // 開啟對比彈窗
-                polishModal.classList.add('open');
-            } else {
-                alert(data.error || "潤色失敗，請稍後再試一次！💨");
-            }
-        } catch (error) {
-            alert("網路連線失敗，請檢查您的伺服器與 API 金鑰狀態。");
-        } finally {
-            // 恢復按鈕狀態
-            aiPolishBtn.disabled = false;
-            aiPolishBtn.innerHTML = originalBtnText;
-        }
+async function polishArticle() {
+    // 檢查是否有 Placeholder 內容或空白
+    const placeholder = document.getElementById('placeholderSpan');
+    if (placeholder || editor.innerText.trim() === '') {
+        alert("請先輸入一些文章內容再進行 AI 潤色喔！✍️");
+        return;
     }
 
-    function closePolishModal() {
-        polishModal.classList.remove('open');
-    }
+    const currentContent = editor.innerHTML;
+    const selectedStyle = document.getElementById('aiStyleSelect').value;
 
-    function applyPolishResult() {
-        if (polishedResultHTML) {
-            postContent.value = polishedResultHTML;
+    // 按鈕進入 Loading 狀態
+    aiPolishBtn.disabled = true;
+    const originalBtnText = aiPolishBtn.innerHTML;
+    aiPolishBtn.innerHTML = `<span class="spinner"></span> 魔法修飾中...`;
+
+    try {
+        const response = await fetch('api_ai_polish.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                content: currentContent,
+                style: selectedStyle
+            })
+        });
+
+        const data = await response.json();
+        
+        if (data && data.polished_content) {
+            // 保存潤色成果
+            polishedResultHTML = data.polished_content;
+
+            // 將 HTML 渲染到對比 Modal 中
+            originalTextContent.innerHTML = currentContent;
+            polishedTextContent.innerHTML = polishedResultHTML;
+
+            // 開啟對比 Modal
+            polishModal.classList.add('open');
+        } else {
+            alert(data.error || "潤色失敗，請稍後再試一次！💨");
         }
+    } catch (error) {
+        alert("網路連線失敗，請檢查您的伺服器與 API 金鑰狀態。");
+    } finally {
+        // 恢復按鈕狀態
+        aiPolishBtn.disabled = false;
+        aiPolishBtn.innerHTML = originalBtnText;
+    }
+}
+
+function closePolishModal() {
+    polishModal.classList.remove('open');
+}
+
+function applyPolishResult() {
+    if (polishedResultHTML) {
+        editor.innerHTML = polishedResultHTML;
+    }
+    closePolishModal();
+}
+
+// 點擊彈窗遮罩關閉彈窗
+polishModal.onclick = (e) => {
+    if (e.target === polishModal) {
         closePolishModal();
     }
+};
 
-    polishModal.onclick = (e) => {
-        if (e.target === polishModal) {
-            closePolishModal();
+/* Submit 表單送出處理 */
+document.getElementById('editForm').addEventListener('submit', function(e){
+    // 檢查是否有 Placeholder 內容
+    const placeholder = document.getElementById('placeholderSpan');
+    if (placeholder) {
+        editor.innerHTML = '';
+    }
+
+    // 將可編輯區塊內的純文字或 HTML 結構同步到隱藏的 textarea 送出
+    document.getElementById('hiddenContent').value = editor.innerHTML;
+
+    // 重新過濾被使用者留在編輯器裡面的「新圖片」檔案
+    const remainingNewImgs = editor.querySelectorAll('img[data-type="new_img"]');
+    const dataTransferImg = new DataTransfer();
+    remainingNewImgs.forEach(img => {
+        const idx = img.dataset.index;
+        if(newImgList[idx]) {
+            dataTransferImg.items.add(newImgList[idx]);
         }
-    };
+    });
+    document.getElementById('hiddenNewFiles').files = dataTransferImg.files;
 
-    // --- 5. 統一的主題切換控制 ---
-    const themeBtn = document.getElementById('themeBtn');
-    const currentTheme = localStorage.getItem('theme') || 'light';
-    document.body.setAttribute('data-theme', currentTheme);
-
-    themeBtn.onclick = () => {
-        const targetTheme =
-            document.body.getAttribute('data-theme') === 'dark'
-            ? 'light'
-            : 'dark';
-
-        document.body.setAttribute('data-theme', targetTheme);
-        localStorage.setItem('theme', targetTheme);
-    };
+    // 重新過濾被使用者留在編輯器裡面的「新影片」檔案
+    const remainingNewVids = editor.querySelectorAll('video[data-type="new_vid"]');
+    const dataTransferVid = new DataTransfer();
+    remainingNewVids.forEach(vid => {
+        const idx = vid.dataset.index;
+        if(newVidList[idx]) {
+            dataTransferVid.items.add(newVidList[idx]);
+        }
+    });
+    document.getElementById('hiddenNewVids').files = dataTransferVid.files;
+});
 </script>
 
 </body>
