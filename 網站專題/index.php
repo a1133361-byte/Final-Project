@@ -289,7 +289,7 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= htmlspecialchars($currentCatName) ?> - PHP Forum</title>
+    <title><?= htmlspecialchars($currentCatName) ?> - Talk Forum</title>
     <style>
         :root {
             --bg-color: #f8fafc;
@@ -343,7 +343,14 @@ try {
             transition: background-color 0.3s, border-color 0.3s;
         }
         .nav-container { max-width: 1400px; margin: 0 auto; padding: 0 25px; display: flex; justify-content: space-between; align-items: center; }
-        .logo h1 { margin: 0; font-size: 1.4rem; font-weight: 800; background: var(--header-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .logo h1 { 
+            margin: 0; 
+            font-size: 1.4rem; 
+            font-weight: 800; 
+            background: var(--header-gradient); 
+            -webkit-background-clip: text; 
+            -webkit-text-fill-color: transparent;
+        }
 
         .user-trigger { 
             display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 5px 12px; border-radius: 50px; transition: 0.2s; position: relative;
@@ -774,7 +781,7 @@ try {
 
 <header>
     <div class="nav-container">
-        <a href="index.php" class="logo" style="text-decoration:none"><h1>🚀 PHP Forum</h1></a>
+        <a href="index.php" class="logo" style="text-decoration:none"><h1>✌️ Talk Forum</h1></a>
         <div style="display:flex; align-items:center; gap:15px;">
             <button id="themeBtn" title="切換主題" style="background:none; border:none; cursor:pointer; font-size:1.3rem; padding:5px; border-radius:50%; transition: 0.2s;">🌓</button>
             <?php if (isset($_SESSION["user_id"])): ?>
@@ -825,7 +832,6 @@ try {
                         <?php if ($isAdmin): ?>
                             <div style="padding: 10px 20px; font-size: 0.7rem; color: var(--admin-color); font-weight: 800; text-transform: uppercase; background: var(--admin-soft);">管理員功能</div>
                             <a href="admin_dashboard.php" class="admin-link">📊 後台數據首頁</a>
-                            <a href="admin_announcement.php" class="admin-link">📢 發布系統公告</a>
                             <a href="admin_reports.php" class="admin-link">
                                 🚩 檢舉審理 
                                 <?php if($pendingReportsCount > 0): ?>

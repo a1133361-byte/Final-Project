@@ -8,11 +8,42 @@ if (!isset($_SESSION["user_id"])) {
 
 require_once "includes/dbh.inc.php";
 
+$current_uid = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : null;
+$isAdmin = isset($_SESSION['role']) && $_SESSION['role'] == 1;
+
+// 初始化未讀通知與檢舉計數
+$pendingReportsCount = 0;
+$unreadAnnouncementsCount = 0;
+
 try {
+    // 取得看板分類
     $sql = "SELECT * FROM categories ORDER BY id ASC";
     $stmt = $pdo->prepare($sql);
     $stmt->execute();
     $categories = $stmt->fetchAll();
+
+    // 取得未讀公告與待審核檢舉數 (加上安全 Try-Catch 防護，防止資料表不存在導致頁面崩潰)
+    if ($current_uid) {
+        if ($isAdmin) {
+            try {
+                $report_stmt = $pdo->query("SELECT COUNT(*) FROM reports WHERE status = 0");
+                $pendingReportsCount = (int)$report_stmt->fetchColumn();
+            } catch (PDOException $e) {
+                // 若 reports 表不存在，防呆設為 0，不影響頁面載入
+                $pendingReportsCount = 0;
+            }
+        }
+        
+        try {
+            $unread_sql = "SELECT COUNT(*) FROM announcements WHERE created_at > (SELECT IFNULL(last_announcement_view, '1970-01-01 00:00:00') FROM users WHERE id = ?)";
+            $unread_stmt = $pdo->prepare($unread_sql);
+            $unread_stmt->execute([$current_uid]);
+            $unreadAnnouncementsCount = (int)$unread_stmt->fetchColumn();
+        } catch (PDOException $e) {
+            // 若 announcements 表不存在，防呆設為 0，防止 SQL 報錯
+            $unreadAnnouncementsCount = 0;
+        }
+    }
 } catch (PDOException $e) {
     die("資料庫錯誤: " . $e->getMessage());
 }
@@ -24,179 +55,184 @@ try {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<title>發表新文章 - PHP Forum</title>
+<title>發表新文章 - Talk Forum</title>
 
 <style>
-:root{
-    --bg-color:#f8fafc;
-    --card-bg:#ffffff;
-    --text-color:#0f172a;
-    --text-muted:#64748b;
-    --border-color:#e2e8f0;
-
-    --accent-color:#6366f1;
-    --accent-soft:rgba(99,102,241,0.1);
-
-    --header-gradient:linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%);
-
-    --nav-bg:rgba(255,255,255,0.85);
-    --sidebar-item-hover:#f1f5f9;
-
-    --danger-color:#ef4444;
-    --success-color:#22c55e;
-
-    --input-bg:#f8fafc;
+:root {
+    --bg-color: #f8fafc;
+    --card-bg: #ffffff;
+    --text-color: #0f172a;
+    --text-muted: #64748b;
+    --nav-bg: rgba(255, 255, 255, 0.85);
+    --accent-color: #6366f1;
+    --accent-soft: rgba(99, 102, 241, 0.1);
+    --header-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    --border-color: #e2e8f0;
+    --sidebar-item-hover: #f1f5f9;
+    --admin-color: #f59e0b;
+    --admin-soft: rgba(245, 158, 11, 0.1);
+    --danger-color: #ef4444;
+    --danger-soft: rgba(239, 68, 68, 0.1);
+    --success-color: #22c55e;
+    --input-bg: #f8fafc;
 }
 
-[data-theme="dark"]{
-    --bg-color:#0f172a;
-    --card-bg:#1e293b;
-    --text-color:#f1f5f9;
-    --text-muted:#94a3b8;
-    --border-color:#334155;
-
-    --nav-bg:rgba(15,23,42,0.9);
-    --sidebar-item-hover:#334155;
-
-    --accent-soft:rgba(99,102,241,0.2);
-
-    --input-bg:#0f172a;
+[data-theme="dark"] {
+    --bg-color: #0f172a;
+    --card-bg: #1e293b;
+    --text-color: #f1f5f9;
+    --text-muted: #94a3b8;
+    --nav-bg: rgba(15, 23, 42, 0.9);
+    --border-color: #334155;
+    --sidebar-item-hover: #334155;
+    --accent-soft: rgba(99, 102, 241, 0.2);
+    --danger-soft: rgba(239, 68, 68, 0.15);
+    --input-bg: #0f172a;
 }
 
-*{
-    box-sizing:border-box;
+* {
+    box-sizing: border-box;
 }
 
-body{
-    margin:0;
-    font-family:'Inter',system-ui,sans-serif;
-    background:var(--bg-color);
-    color:var(--text-color);
-    transition:.25s;
+body {
+    margin: 0;
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--bg-color);
+    color: var(--text-color);
+    transition: background-color 0.3s, color 0.3s;
 }
 
-/* Header */
-header{
-    background:var(--nav-bg);
-    backdrop-filter:blur(10px);
-    border-bottom:1px solid var(--border-color);
-
-    position:sticky;
-    top:0;
-    z-index:1000;
-
-    padding:12px 0;
+/* Header & Navigation (與 profile.php 一致) */
+header { 
+    background: var(--nav-bg); 
+    backdrop-filter: blur(10px); 
+    border-bottom: 1px solid var(--border-color); 
+    position: sticky; top: 0; z-index: 1000; padding: 12px 0; 
 }
+.nav-container { max-width: 1400px; margin: 0 auto; padding: 0 25px; display: flex; justify-content: space-between; align-items: center; }
+.logo h1 { margin: 0; font-size: 1.4rem; font-weight: 800; background: var(--header-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
 
-.nav-container{
-    max-width:1400px;
-    margin:0 auto;
-    padding:0 25px;
+.user-trigger { display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 5px 12px; border-radius: 50px; transition: 0.2s; position: relative; }
+.user-trigger:hover { background: var(--sidebar-item-hover); }
+.user-trigger span { font-weight: 700; font-size: 0.95rem; }
 
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
+.notification-badge { position: absolute; top: -2px; right: -2px; background: var(--danger-color); color: white; font-size: 0.65rem; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 10px; display: flex; justify-content: center; align-items: center; border: 2px solid var(--card-bg); font-weight: 800; }
+
+/* 下拉選單樣式 (與 profile.php 一致) */
+.dropdown-menu { 
+    position: absolute; 
+    right: 0; 
+    top: 125%; 
+    width: 280px; 
+    background: var(--card-bg); 
+    border: 1px solid var(--border-color); 
+    border-radius: 16px; 
+    box-shadow: 0 10px 25px rgba(0,0,0,0.15); 
+    display: none; 
+    flex-direction: column; 
+    overflow: hidden; 
+    z-index: 1100; 
 }
-
-.logo{
-    text-decoration:none;
+.dropdown-menu.active { display: flex; }
+.dropdown-menu a { 
+    padding: 12px 20px; 
+    text-decoration: none; 
+    color: var(--text-color); 
+    font-weight: 600; 
+    font-size: 0.9rem; 
+    transition: 0.2s; 
+    border-bottom: 1px solid var(--border-color); 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
 }
+.dropdown-menu a:last-child { border-bottom: none; }
+.dropdown-menu a:hover { background: var(--sidebar-item-hover); color: var(--accent-color); }
 
-.logo h1{
-    margin:0;
-    font-size:1.4rem;
-    font-weight:800;
-
-    background:var(--header-gradient);
-    -webkit-background-clip:text;
-    -webkit-text-fill-color:transparent;
-}
+/* 管理員連結樣式 (與 profile.php 一致) */
+.admin-link { color: var(--admin-color) !important; background: var(--admin-soft); }
+.admin-link:hover { background: var(--admin-color) !important; color: white !important; }
+.badge-inline { background: var(--danger-color); color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; margin-left: auto; font-weight: 800; }
 
 /* Layout */
-.main-wrapper{
-    max-width:1000px; 
-    margin:25px auto;
-    padding:0 25px;
+.main-wrapper {
+    max-width: 1000px; 
+    margin: 25px auto;
+    padding: 0 25px;
 }
 
 /* Main Card */
-.form-card{
-    background:var(--card-bg);
-    border:1px solid var(--border-color);
-    border-radius:28px;
-    overflow:hidden;
+.form-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 28px;
+    overflow: hidden;
 }
 
-.form-content{
-    padding:35px;
+.form-content {
+    padding: 35px;
 }
 
-.page-title{
-    font-size:2rem;
-    font-weight:900;
-    margin:0 0 8px 0;
+.page-title {
+    font-size: 2rem;
+    font-weight: 900;
+    margin: 0 0 8px 0;
 }
 
-.page-desc{
-    color:var(--text-muted);
-    margin-bottom:35px;
-    line-height:1.6;
+.page-desc {
+    color: var(--text-muted);
+    margin-bottom: 35px;
+    line-height: 1.6;
 }
 
 /* Form */
-.form-group{
-    margin-bottom:24px;
+.form-group {
+    margin-bottom: 24px;
 }
 
-label{
-    display:block;
-    margin-bottom:10px;
-
-    font-size:.92rem;
-    font-weight:800;
-    color:var(--text-color);
+label {
+    display: block;
+    margin-bottom: 10px;
+    font-size: .92rem;
+    font-weight: 800;
+    color: var(--text-color);
 }
 
 select,
-input[type="text"]{
-    width:100%;
-
-    border:1px solid var(--border-color);
-    background:var(--input-bg);
-    color:var(--text-color);
-
-    border-radius:16px;
-
-    padding:14px 16px;
-
-    font-size:.96rem;
-    font-family:inherit;
-
-    transition:.2s;
+input[type="text"] {
+    width: 100%;
+    border: 1px solid var(--border-color);
+    background: var(--input-bg);
+    color: var(--text-color);
+    border-radius: 16px;
+    padding: 14px 16px;
+    font-size: .96rem;
+    font-family: inherit;
+    transition: .2s;
 }
 
 select:focus,
 input[type="text"]:focus,
-.rich-editor:focus{
-    outline:none;
-    border-color:var(--accent-color);
-    box-shadow:0 0 0 4px var(--accent-soft);
+.rich-editor:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 4px var(--accent-soft);
 }
 
 /* Rich Editor */
 .rich-editor {
-    width:100%;
-    min-height:300px;
-    border:1px solid var(--border-color);
-    background:var(--input-bg);
-    color:var(--text-color);
-    border-radius:16px;
-    padding:14px 16px;
-    font-size:.96rem;
-    font-family:inherit;
-    line-height:1.7;
-    overflow-y:auto;
-    transition:.2s;
+    width: 100%;
+    min-height: 300px;
+    border: 1px solid var(--border-color);
+    background: var(--input-bg);
+    color: var(--text-color);
+    border-radius: 16px;
+    padding: 14px 16px;
+    font-size: .96rem;
+    font-family: inherit;
+    line-height: 1.7;
+    overflow-y: auto;
+    transition: .2s;
 }
 
 .rich-editor img,
@@ -210,48 +246,48 @@ input[type="text"]:focus,
 }
 
 /* Attachment Box */
-.attach-box{
-    margin-top:18px;
-    background:var(--bg-color);
-    border:1px solid var(--border-color);
-    border-radius:20px;
-    padding:18px;
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    flex-wrap:wrap;
-    gap:15px;
+.attach-box {
+    margin-top: 18px;
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    padding: 18px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 15px;
 }
 
-.attachment-controls{
-    display:flex;
-    flex-wrap:wrap;
-    gap:10px;
+.attachment-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
 }
 
 .ai-controls {
-    display:flex;
-    align-items:center;
-    gap:8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
-.btn-control{
-    border:none;
-    background:var(--card-bg);
-    border:1px solid var(--border-color);
-    color:var(--text-color);
-    padding:10px 16px;
-    border-radius:12px;
-    font-size:.9rem;
-    font-weight:700;
-    cursor:pointer;
-    transition:.2s;
+.btn-control {
+    border: none;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 10px 16px;
+    border-radius: 12px;
+    font-size: .9rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: .2s;
 }
 
-.btn-control:hover{
-    background:var(--accent-soft);
-    border-color:var(--accent-color);
-    color:var(--accent-color);
+.btn-control:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent-color);
+    color: var(--accent-color);
 }
 
 .btn-ai-polish {
@@ -285,50 +321,50 @@ input[type="text"]:focus,
 }
 
 /* Buttons */
-.button-group{
-    display:flex;
-    gap:15px;
-    margin-top:35px;
+.button-group {
+    display: flex;
+    gap: 15px;
+    margin-top: 35px;
 }
 
 .btn-submit,
-.btn-cancel{
-    border:none;
-    text-decoration:none;
-    padding:15px 20px;
-    border-radius:16px;
-    font-weight:800;
-    font-size:.95rem;
-    transition:.2s;
+.btn-cancel {
+    border: none;
+    text-decoration: none;
+    padding: 15px 20px;
+    border-radius: 16px;
+    font-weight: 800;
+    font-size: .95rem;
+    transition: .2s;
 }
 
-.btn-submit{
-    flex:2;
-    background:var(--header-gradient);
-    color:white;
-    cursor:pointer;
+.btn-submit {
+    flex: 2;
+    background: var(--header-gradient);
+    color: white;
+    cursor: pointer;
 }
 
-.btn-submit:hover{
-    transform:translateY(-2px);
-    box-shadow:0 10px 20px rgba(99,102,241,0.25);
+.btn-submit:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(99,102,241,0.25);
 }
 
-.btn-cancel{
-    flex:1;
-    background:transparent;
-    border:1px solid var(--border-color);
-    color:var(--text-color);
-    display:flex;
-    justify-content:center;
-    align-items:center;
+.btn-cancel {
+    flex: 1;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
-.btn-cancel:hover{
-    background:var(--sidebar-item-hover);
+.btn-cancel:hover {
+    background: var(--sidebar-item-hover);
 }
 
-/* AI Polish Result Modal (AI潤色對比彈窗樣式) */
+/* AI Polish Result Modal */
 .modal-overlay {
     position: fixed;
     top: 0; left: 0; width: 100%; height: 100%;
@@ -438,15 +474,15 @@ input[type="text"]:focus,
 }
 
 @media (max-width:600px){
-    .form-content{
+    .form-content {
         padding:22px;
     }
 
-    .button-group{
+    .button-group {
         flex-direction:column;
     }
 
-    .page-title{
+    .page-title {
         font-size:1.6rem;
     }
     
@@ -465,13 +501,42 @@ input[type="text"]:focus,
 
 <header>
     <div class="nav-container">
-        <a href="index.php" class="logo">
-            <h1>🚀 PHP Forum</h1>
+        <a href="index.php" class="logo" style="text-decoration:none">
+            <h1>✌️ Talk Forum</h1>
         </a>
-
-        <button id="themeBtn" class="btn-control">
-            🌓 主題
-        </button>
+        <div style="display:flex; align-items:center; gap:15px;">
+            <button id="themeBtn" title="切換主題" style="background:none; border:none; cursor:pointer; font-size:1.3rem; padding:5px; border-radius:50%;">🌓</button>
+            <?php if (isset($_SESSION["user_id"])): ?>
+                <div style="position:relative;">
+                    <div class="user-trigger" id="userTrigger">
+                        <img src="<?= !empty($_SESSION['profile_img']) ? "uploads/users_profile_img/".$_SESSION['profile_img'] : "uploads/default_avatar.png" ?>" style="width:32px; height:32px; border-radius:50%; object-fit:cover; border: 2px solid <?= $isAdmin ? 'var(--admin-color)' : 'var(--accent-color)' ?>;">
+                        <span style="<?= $isAdmin ? 'color: var(--admin-color);' : '' ?>"><?= htmlspecialchars($_SESSION["username"]) ?></span>
+                        <?php 
+                        $totalNotif = $unreadAnnouncementsCount + ($isAdmin ? $pendingReportsCount : 0);
+                        if ($totalNotif > 0): ?>
+                            <div class="notification-badge"><?= $totalNotif ?></div>
+                        <?php endif; ?>
+                    </div>
+                    <div class="dropdown-menu" id="dropdownMenu">
+                        <div style="padding: 10px 20px; font-size: 0.7rem; color: var(--text-muted); font-weight: 800; text-transform: uppercase;">使用者功能</div>
+                        <a href="profile.php?id=<?= $_SESSION['user_id'] ?>">👤 我的個人資料</a>
+                        <a href="index.php?view=history">🕒 歷史瀏覽紀錄</a>
+                        <a href="create_post.php">✍️ 撰寫新文章</a>
+                        <?php if ($isAdmin): ?>
+                            <div style="padding: 10px 20px; font-size: 0.7rem; color: var(--admin-color); font-weight: 800; text-transform: uppercase; background: var(--admin-soft);">管理員功能</div>
+                            <a href="admin_dashboard.php" class="admin-link">📊 後台數據首頁</a>
+                            <a href="admin_reports.php" class="admin-link">🚩 檢舉審核 
+                                <?php if($pendingReportsCount > 0): ?><span class="badge-inline"><?= $pendingReportsCount ?></span><?php endif; ?>
+                            </a>
+                            <a href="admin_categories.php" class="admin-link">🛠️ 看板管理</a>
+                        <?php endif; ?>
+                        <a href="logout.php" style="color:#ef4444; font-weight:700;">🚪 登出系統</a>
+                    </div>
+                </div>
+            <?php else: ?>
+                <a href="login.php" style="text-decoration:none; background:var(--accent-color); color:white; padding:8px 20px; border-radius:50px; font-weight:700;">登入</a>
+            <?php endif; ?>
+        </div>
     </div>
 </header>
 
@@ -552,7 +617,7 @@ input[type="text"]:focus,
 
                             </div>
                             
-                            <!-- ===== 新增：AI 文章潤色工具列 ===== -->
+                            <!-- ===== AI 文章潤色工具列 ===== -->
                             <div class="ai-controls">
                                 <select id="aiStyleSelect" class="style-select" title="選擇修飾風格">
                                     <option value="professional">🛡️ 專業職場</option>
@@ -618,7 +683,7 @@ input[type="text"]:focus,
 
 </div>
 
-<!-- ===== 新增：AI 潤色對比確認彈窗 ===== -->
+<!-- ===== AI 潤色對比確認彈窗 ===== -->
 <div class="modal-overlay" id="polishModal">
     <div class="modal">
         <div class="modal-header">
@@ -644,9 +709,8 @@ input[type="text"]:focus,
 
 <script>
 /* =========================
-    Theme
+    Theme (與 profile.php 相同的本機儲存與渲染邏輯)
 ========================= */
-
 const themeBtn = document.getElementById('themeBtn');
 const currentTheme = localStorage.getItem('theme') || 'light';
 
@@ -663,9 +727,23 @@ themeBtn.onclick = () => {
 };
 
 /* =========================
+    User Dropdown Menu (與 profile.php 一致)
+========================= */
+const userTrigger = document.getElementById('userTrigger');
+const dropdownMenu = document.getElementById('dropdownMenu');
+if (userTrigger && dropdownMenu) {
+    userTrigger.onclick = (e) => { 
+        e.stopPropagation(); 
+        dropdownMenu.classList.toggle('active'); 
+    };
+    document.addEventListener('click', (e) => {
+        if (!userTrigger.contains(e.target)) dropdownMenu.classList.remove('active');
+    });
+}
+
+/* =========================
     Editor & Files
 ========================= */
-
 let imgList = [];
 let vidList = [];
 
@@ -754,7 +832,7 @@ document.getElementById('vidInput').addEventListener('change', function(){
 });
 
 /* =========================
-    新增：AI 文章潤色互動邏輯
+    AI 文章潤色互動邏輯
 ========================= */
 const polishModal = document.getElementById('polishModal');
 const originalTextContent = document.getElementById('originalTextContent');

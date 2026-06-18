@@ -301,7 +301,7 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= htmlspecialchars($user['username']) ?> 的個人資料 - PHP Forum</title>
+    <title><?= htmlspecialchars($user['username']) ?> 的個人資料 - Talk Forum</title>
     <style>
         :root {
             --bg-color: #f8fafc;
@@ -315,7 +315,7 @@ try {
             --border-color: #e2e8f0;
             --sidebar-item-hover: #f1f5f9;
             --admin-color: #f59e0b;
-            --admin-soft: rgba(245, 158, 11, 0.15);
+            --admin-soft: rgba(245, 158, 11, 0.1);
             --danger-color: #ef4444;
             --danger-soft: rgba(239, 68, 68, 0.1);
             --success-color: #22c55e;
@@ -352,11 +352,44 @@ try {
 
         .user-trigger { display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 5px 12px; border-radius: 50px; transition: 0.2s; position: relative; }
         .user-trigger:hover { background: var(--sidebar-item-hover); }
+        .user-trigger span { font-weight: 700; font-size: 0.95rem; }
+        
         .notification-badge { position: absolute; top: -2px; right: -2px; background: var(--danger-color); color: white; font-size: 0.65rem; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 10px; display: flex; justify-content: center; align-items: center; border: 2px solid var(--card-bg); font-weight: 800; }
-        .dropdown-menu { position: absolute; right: 0; top: 125%; width: 240px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.15); display: none; flex-direction: column; overflow: hidden; z-index: 1100; }
+        
+        /* 調整與 index 一致的下拉選單樣式 */
+        .dropdown-menu { 
+            position: absolute; 
+            right: 0; 
+            top: 125%; 
+            width: 280px; 
+            background: var(--card-bg); 
+            border: 1px solid var(--border-color); 
+            border-radius: 16px; 
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15); 
+            display: none; 
+            flex-direction: column; 
+            overflow: hidden; 
+            z-index: 1100; 
+        }
         .dropdown-menu.active { display: flex; }
-        .dropdown-menu a { padding: 12px 20px; text-decoration: none; color: var(--text-color); font-weight: 600; font-size: 0.9rem; transition: 0.2s; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }
+        .dropdown-menu a { 
+            padding: 12px 20px; 
+            text-decoration: none; 
+            color: var(--text-color); 
+            font-weight: 600; 
+            font-size: 0.9rem; 
+            transition: 0.2s; 
+            border-bottom: 1px solid var(--border-color); 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+        }
+        .dropdown-menu a:last-child { border-bottom: none; }
         .dropdown-menu a:hover { background: var(--sidebar-item-hover); color: var(--accent-color); }
+
+        /* 調整與 index 一致的管理員連結樣式 */
+        .admin-link { color: var(--admin-color) !important; background: var(--admin-soft); }
+        .admin-link:hover { background: var(--admin-color) !important; color: white !important; }
 
         .main-wrapper { max-width: 1400px; margin: 20px auto; padding: 0 25px; display: grid; grid-template-columns: 280px 1fr; gap: 30px; }
 
@@ -368,10 +401,6 @@ try {
             overflow: hidden;
             transition: 0.3s;
         }   
-        .editable-banner {
-            cursor: pointer;
-        }
-
         .editable-banner {
             cursor: pointer;
         }
@@ -575,7 +604,7 @@ try {
 
 <header>
     <div class="nav-container">
-        <a href="index.php" class="logo" style="text-decoration:none"><h1>🚀 PHP Forum</h1></a>
+        <a href="index.php" class="logo" style="text-decoration:none"><h1>✌️ Talk Forum</h1></a>
         <div style="display:flex; align-items:center; gap:15px;">
             <button id="themeBtn" title="切換主題" style="background:none; border:none; cursor:pointer; font-size:1.3rem; padding:5px; border-radius:50%;">🌓</button>
             <?php if (isset($_SESSION["user_id"])): ?>
@@ -592,16 +621,15 @@ try {
                     <div class="dropdown-menu" id="dropdownMenu">
                         <div style="padding: 10px 20px; font-size: 0.7rem; color: var(--text-muted); font-weight: 800; text-transform: uppercase;">使用者功能</div>
                         <a href="profile.php?id=<?= $_SESSION['user_id'] ?>">👤 我的個人資料</a>
-                        <a href="view_announcements.php">📢 系統公告通知
-                            <?php if($unreadAnnouncementsCount > 0): ?><span class="badge-inline"><?= $unreadAnnouncementsCount ?></span><?php endif; ?>
-                        </a>
+                        <a href="index.php?view=history">🕒 歷史瀏覽紀錄</a>
                         <a href="create_post.php">✍️ 撰寫新文章</a>
                         <?php if ($isAdmin): ?>
                             <div style="padding: 10px 20px; font-size: 0.7rem; color: var(--admin-color); font-weight: 800; text-transform: uppercase; background: var(--admin-soft);">管理員功能</div>
-                            <a href="admin_announcement.php" style="color:var(--admin-color)">📢 發布系統公告</a>
-                            <a href="admin_reports.php" style="color:var(--admin-color)">🚩 檢舉審核 
+                            <a href="admin_dashboard.php" class="admin-link">📊 後台數據首頁</a>
+                            <a href="admin_reports.php" class="admin-link">🚩 檢舉審核 
                                 <?php if($pendingReportsCount > 0): ?><span class="badge-inline"><?= $pendingReportsCount ?></span><?php endif; ?>
                             </a>
+                            <a href="admin_categories.php" class="admin-link">🛠️ 看板管理</a>
                         <?php endif; ?>
                         <a href="logout.php" style="color:#ef4444; font-weight:700;">🚪 登出系統</a>
                     </div>

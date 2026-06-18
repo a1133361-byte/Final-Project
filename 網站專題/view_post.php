@@ -10,6 +10,24 @@ if (!isset($_GET["id"]) || empty($_GET["id"])) {
 $post_id = $_GET["id"];
 $isAdmin = isset($_SESSION['role']) && $_SESSION['role'] == 1;
 
+// 取得當前使用者 ID 與導覽列通知資料
+$current_uid = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : null;
+$pendingReportsCount = 0;
+$unreadAnnouncementsCount = 0;
+
+if ($current_uid) {
+    try {
+        if ($isAdmin) {
+            $report_stmt = $pdo->query("SELECT COUNT(*) FROM reports WHERE status = 0");
+            $pendingReportsCount = (int)$report_stmt->fetchColumn();
+        }
+        $unread_sql = "SELECT COUNT(*) FROM announcements WHERE created_at > (SELECT IFNULL(last_announcement_view, '1970-01-01 00:00:00') FROM users WHERE id = ?)";
+        $unread_stmt = $pdo->prepare($unread_sql);
+        $unread_stmt->execute([$current_uid]);
+        $unreadAnnouncementsCount = (int)$unread_stmt->fetchColumn();
+    } catch (PDOException $e) {}
+}
+
 try {
     // 1. 取得文章主體與作者資訊
     $sql = "SELECT posts.*, users.username, users.profile_img, categories.name AS cat_name
@@ -140,7 +158,7 @@ function renderPostContent($content, $images, $videos) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= htmlspecialchars($post['title']) ?> - PHP Forum</title>
+    <title><?= htmlspecialchars($post['title']) ?> - Talk Forum</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
     <style>
         /* 直接採用 index.php 的變數設定 */
@@ -157,6 +175,9 @@ function renderPostContent($content, $images, $videos) {
             --sidebar-item-hover: #f1f5f9;
             --admin-color: #f59e0b;
             --admin-soft: rgba(245, 158, 11, 0.1);
+            --danger-color: #ef4444;
+            --danger-soft: rgba(239, 68, 68, 0.1);
+            --success-color: #22c55e;
         }
 
         [data-theme="dark"] {
@@ -168,6 +189,7 @@ function renderPostContent($content, $images, $videos) {
             --border-color: #334155;
             --sidebar-item-hover: #334155;
             --accent-soft: rgba(99, 102, 241, 0.2);
+            --danger-soft: rgba(239, 68, 68, 0.15);
             --admin-soft: rgba(245, 158, 11, 0.15);
         }
 
@@ -180,7 +202,7 @@ function renderPostContent($content, $images, $videos) {
             line-height: 1.6;
         }
 
-        /* --- Header: 與 index.php 完美同步 --- */
+        /* --- Header: 與 profile.php 完美同步 --- */
         header { 
             background: var(--nav-bg); 
             backdrop-filter: blur(10px); 
@@ -192,30 +214,61 @@ function renderPostContent($content, $images, $videos) {
             transition: background-color 0.3s, border-color 0.3s;
         }
         .nav-container { max-width: 1400px; margin: 0 auto; padding: 0 25px; display: flex; justify-content: space-between; align-items: center; }
-        .logo h1 { margin: 0; font-size: 1.4rem; font-weight: 800; background: var(--header-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .logo h1{ 
+            margin: 0; 
+            font-size: 1.4rem; 
+            font-weight: 800; 
+            background: var(--header-gradient); 
+            -webkit-background-clip: text; 
+            -webkit-text-fill-color: transparent;
+        }
         .logo { text-decoration: none; }
 
         .user-trigger { 
-            display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 5px 12px; border-radius: 50px; transition: 0.2s; 
+            display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 5px 12px; border-radius: 50px; transition: 0.2s; position: relative;
         }
         .user-trigger:hover { background: var(--sidebar-item-hover); }
         .user-trigger span { font-weight: 700; font-size: 0.95rem; }
 
-        /* Dropdown Menu 與 index.php 一致 */
+        .notification-badge { 
+            position: absolute; top: -2px; right: -2px; background: var(--danger-color); color: white; font-size: 0.65rem; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 10px; display: flex; justify-content: center; align-items: center; border: 2px solid var(--card-bg); font-weight: 800; 
+        }
+
+        /* Dropdown Menu 與 profile.php 一致 */
         .dropdown-menu { 
-            position: absolute; right: 0; top: 125%; width: 240px; 
-            background: var(--card-bg); border: 1px solid var(--border-color); 
-            border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.15); 
-            display: none; flex-direction: column; overflow: hidden; z-index: 1100;
+            position: absolute; 
+            right: 0; 
+            top: 125%; 
+            width: 280px; 
+            background: var(--card-bg); 
+            border: 1px solid var(--border-color); 
+            border-radius: 16px; 
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15); 
+            display: none; 
+            flex-direction: column; 
+            overflow: hidden; 
+            z-index: 1100;
         }
         .dropdown-menu.active { display: flex; }
         .dropdown-menu a { 
-            padding: 12px 20px; text-decoration: none; color: var(--text-color); 
-            font-weight: 600; font-size: 0.9rem; transition: 0.2s; 
+            padding: 12px 20px; 
+            text-decoration: none; 
+            color: var(--text-color); 
+            font-weight: 600; 
+            font-size: 0.9rem; 
+            transition: 0.2s; 
             border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
+        .dropdown-menu a:last-child { border-bottom: none; }
         .dropdown-menu a:hover { background: var(--sidebar-item-hover); color: var(--accent-color); }
+        
         .admin-link { color: var(--admin-color) !important; background: var(--admin-soft); }
+        .admin-link:hover { background: var(--admin-color) !important; color: white !important; }
+        
+        .badge-inline { background: var(--danger-color); color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; margin-left: auto; font-weight: 800; }
 
         /* --- Main Content Layout --- */
         .main-wrapper { max-width: 800px; margin: 30px auto; padding: 0 20px; }
@@ -251,7 +304,7 @@ function renderPostContent($content, $images, $videos) {
         .author-name { font-weight: 700; color: var(--text-color); text-decoration: none; font-size: 1rem; }
         .post-date { font-size: 0.85rem; color: var(--text-muted); font-weight: 500; }
 
-        /* ===== 新增：AI 智能摘要區塊樣式 ===== */
+        /* ===== AI 智能摘要區塊樣式 ===== */
         .ai-summary-box {
             background: var(--bg-color);
             border: 1px dashed var(--border-color);
@@ -482,33 +535,37 @@ function renderPostContent($content, $images, $videos) {
 </head>
 <body>
 
-<!-- 用於顯示優雅通知的容器 -->
 <div id="toastContainer"></div>
 
 <header>
     <div class="nav-container">
-        <a href="index.php" class="logo"><h1>🚀 PHP Forum</h1></a>
+        <a href="index.php" class="logo" style="text-decoration:none"><h1>✌️ Talk Forum</h1></a>
         <div style="display:flex; align-items:center; gap:15px;">
             <button id="themeBtn" title="切換主題" style="background:none; border:none; cursor:pointer; font-size:1.3rem; padding:5px; border-radius:50%;">🌓</button>
-            
             <?php if (isset($_SESSION["user_id"])): ?>
                 <div style="position:relative;">
                     <div class="user-trigger" id="userTrigger">
-                        <img src="<?= !empty($_SESSION['profile_img']) ? "uploads/users_profile_img/".$_SESSION['profile_img'] : "uploads/default_avatar.png" ?>" class="author-avatar" style="width:32px; height:32px;">
+                        <img src="<?= !empty($_SESSION['profile_img']) ? "uploads/users_profile_img/".$_SESSION['profile_img'] : "uploads/default_avatar.png" ?>" style="width:32px; height:32px; border-radius:50%; object-fit:cover; border: 2px solid <?= $isAdmin ? 'var(--admin-color)' : 'var(--accent-color)' ?>;">
                         <span style="<?= $isAdmin ? 'color: var(--admin-color);' : '' ?>"><?= htmlspecialchars($_SESSION["username"]) ?></span>
+                        <?php 
+                        $totalNotif = $unreadAnnouncementsCount + ($isAdmin ? $pendingReportsCount : 0);
+                        if ($totalNotif > 0): ?>
+                            <div class="notification-badge"><?= $totalNotif ?></div>
+                        <?php endif; ?>
                     </div>
                     <div class="dropdown-menu" id="dropdownMenu">
                         <div style="padding: 10px 20px; font-size: 0.7rem; color: var(--text-muted); font-weight: 800; text-transform: uppercase;">使用者功能</div>
                         <a href="profile.php?id=<?= $_SESSION['user_id'] ?>">👤 我的個人資料</a>
                         <a href="index.php?view=history">🕒 歷史瀏覽紀錄</a>
                         <a href="create_post.php">✍️ 撰寫新文章</a>
-                        
                         <?php if ($isAdmin): ?>
                             <div style="padding: 10px 20px; font-size: 0.7rem; color: var(--admin-color); font-weight: 800; text-transform: uppercase; background: var(--admin-soft);">管理員功能</div>
+                            <a href="admin_dashboard.php" class="admin-link">📊 後台數據首頁</a>
+                            <a href="admin_reports.php" class="admin-link">🚩 檢舉審核 
+                                <?php if($pendingReportsCount > 0): ?><span class="badge-inline"><?= $pendingReportsCount ?></span><?php endif; ?>
+                            </a>
                             <a href="admin_categories.php" class="admin-link">🛠️ 看板管理</a>
-                            <a href="admin_dashboard.php" class="admin-link">📊 後台數據</a>
                         <?php endif; ?>
-                        
                         <a href="logout.php" style="color:#ef4444; font-weight:700;">🚪 登出系統</a>
                     </div>
                 </div>
@@ -533,7 +590,6 @@ function renderPostContent($content, $images, $videos) {
             </div>
         </div>
 
-        <!-- ===== 新增：AI 智能摘要區塊 ===== -->
         <div class="ai-summary-box" id="aiSummaryBox">
             <div class="ai-summary-header">
                 <div class="ai-summary-title">
@@ -642,7 +698,6 @@ function renderPostContent($content, $images, $videos) {
     </section>
 </div>
 
-<!-- 檢舉 Modal -->
 <div id="reportModal">
     <div class="modal-overlay" onclick="closeReport()"></div>
     <div class="modal-content">
@@ -836,10 +891,45 @@ function renderPostContent($content, $images, $videos) {
     });
 
     /**
-     * ===== 新增：AI 一鍵生成摘要互動 JS 控制 =====
+     * ===== 新增/修改：支援多模態圖文辨識的 AI 摘要生成邏輯 =====
      */
     let isGeneratingSummary = false;
     let summaryCache = null; // 本地快取，避免重複呼叫浪費 Token
+
+    // 將 PHP 的圖片陣列與路徑，安全地轉換為前端 JavaScript 可以使用的陣列
+    const postImages = <?php echo json_encode(array_map(function($img) {
+        return "uploads/post_imgs/" . $img;
+    }, $post_images)); ?>;
+
+    // 輔助函式：使用 Canvas 異步將圖片網址轉換為 Base64 字串
+    function convertImgToBase64(url) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.crossOrigin = 'Anonymous'; // 防止 XAMPP/本地或外鏈圖片的跨域 Canvas 安全錯誤
+            img.onload = function() {
+                const canvas = document.createElement('canvas');
+                canvas.width = this.width;
+                canvas.height = this.height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(this, 0, 0);
+                
+                // 根據副檔名判斷 MIME 類別
+                let mimeType = 'image/jpeg';
+                if (url.toLowerCase().endsWith('.png')) mimeType = 'image/png';
+                if (url.toLowerCase().endsWith('.webp')) mimeType = 'image/webp';
+                
+                const dataURL = canvas.toDataURL(mimeType);
+                // 移除 "data:image/xxx;base64," 的標頭開頭，僅抽取與後端規格相容的純 Base64 內文
+                const base64Data = dataURL.split(',')[1];
+                
+                resolve({ mimeType: mimeType, base64: base64Data });
+            };
+            img.onerror = function() {
+                reject(new Error('圖片載入或跨域讀取失敗'));
+            };
+            img.src = url;
+        });
+    }
 
     async function generateSummary() {
         if (isGeneratingSummary) return;
@@ -874,16 +964,32 @@ function renderPostContent($content, $images, $videos) {
         aiSummaryBtn.disabled = true;
         aiSummaryBtn.style.opacity = '0.6';
 
+        // 初始化基本發送參數
+        const requestPayload = {
+            title: titleText,
+            content: cleanContent,
+            image_format: '',
+            image_base64: ''
+        };
+
+        // 如果文章包含圖片，將第一張圖片轉換為 Base64 附加到發送載荷中
+        if (postImages && postImages.length > 0) {
+            try {
+                const imgData = await convertImgToBase64(postImages[0]);
+                requestPayload.image_format = imgData.mimeType;
+                requestPayload.image_base64 = imgData.base64;
+            } catch (e) {
+                console.warn("圖片轉換 Base64 失敗，將安全降級為僅純文字摘要:", e);
+            }
+        }
+
         try {
             const response = await fetch('api_ai_summary.php', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    title: titleText,
-                    content: cleanContent
-                })
+                body: JSON.stringify(requestPayload)
             });
 
             const data = await response.json();

@@ -14,6 +14,22 @@ if (!isset($_GET["id"]) || empty($_GET["id"])) {
 
 $post_id = $_GET["id"];
 $user_id = $_SESSION["user_id"];
+$current_uid = $_SESSION["user_id"];
+$isAdmin = isset($_SESSION['role']) && $_SESSION['role'] == 1;
+
+// 初始化通知與檢舉統計 (與 profile.php 一致)
+$pendingReportsCount = 0;
+$unreadAnnouncementsCount = 0;
+try {
+    if ($isAdmin) {
+        $report_stmt = $pdo->query("SELECT COUNT(*) FROM reports WHERE status = 0");
+        $pendingReportsCount = (int)$report_stmt->fetchColumn();
+    }
+    $unread_sql = "SELECT COUNT(*) FROM announcements WHERE created_at > (SELECT IFNULL(last_announcement_view, '1970-01-01 00:00:00') FROM users WHERE id = ?)";
+    $unread_stmt = $pdo->prepare($unread_sql);
+    $unread_stmt->execute([$current_uid]);
+    $unreadAnnouncementsCount = (int)$unread_stmt->fetchColumn();
+} catch (PDOException $e) {}
 
 try {
     $sql = "SELECT * FROM posts WHERE id = ?";
@@ -49,7 +65,7 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>編輯文章 - PHP Forum</title>
+    <title>編輯文章 - Talk Forum</title>
     <style>
         :root{
             --bg-color:#f8fafc;
@@ -70,6 +86,10 @@ try {
             --success-color:#22c55e;
 
             --input-bg:#f8fafc;
+            
+            --admin-color: #f59e0b;
+            --admin-soft: rgba(245, 158, 11, 0.1);
+            --danger-soft: rgba(239, 68, 68, 0.1);
         }
 
         [data-theme="dark"]{
@@ -85,6 +105,7 @@ try {
             --accent-soft:rgba(99,102,241,0.2);
 
             --input-bg:#0f172a;
+            --danger-soft: rgba(239, 68, 68, 0.15);
         }
 
         *{
@@ -99,7 +120,7 @@ try {
             transition:.25s;
         }
 
-        /* Header */
+        /* Header (與 profile.php 一致) */
         header{
             background:var(--nav-bg);
             backdrop-filter:blur(10px);
@@ -135,6 +156,72 @@ try {
             -webkit-background-clip:text;
             -webkit-text-fill-color:transparent;
         }
+
+        /* 使用者下拉選單 (與 profile.php 一致) */
+        .user-trigger { 
+            display: flex; 
+            align-items: center; 
+            gap: 10px; 
+            cursor: pointer; 
+            padding: 5px 12px; 
+            border-radius: 50px; 
+            transition: 0.2s; 
+            position: relative; 
+        }
+        .user-trigger:hover { background: var(--sidebar-item-hover); }
+        .user-trigger span { font-weight: 700; font-size: 0.95rem; }
+        
+        .notification-badge { 
+            position: absolute; 
+            top: -2px; 
+            right: -2px; 
+            background: var(--danger-color); 
+            color: white; 
+            font-size: 0.65rem; 
+            min-width: 18px; 
+            height: 18px; 
+            padding: 0 4px; 
+            border-radius: 10px; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            border: 2px solid var(--card-bg); 
+            font-weight: 800; 
+        }
+        
+        .dropdown-menu { 
+            position: absolute; 
+            right: 0; 
+            top: 125%; 
+            width: 280px; 
+            background: var(--card-bg); 
+            border: 1px solid var(--border-color); 
+            border-radius: 16px; 
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15); 
+            display: none; 
+            flex-direction: column; 
+            overflow: hidden; 
+            z-index: 1100; 
+        }
+        .dropdown-menu.active { display: flex; }
+        .dropdown-menu a { 
+            padding: 12px 20px; 
+            text-decoration: none; 
+            color: var(--text-color); 
+            font-weight: 600; 
+            font-size: 0.9rem; 
+            transition: 0.2s; 
+            border-bottom: 1px solid var(--border-color); 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+        }
+        .dropdown-menu a:last-child { border-bottom: none; }
+        .dropdown-menu a:hover { background: var(--sidebar-item-hover); color: var(--accent-color); }
+
+        .admin-link { color: var(--admin-color) !important; background: var(--admin-soft); }
+        .admin-link:hover { background: var(--admin-color) !important; color: white !important; }
+        .badge-inline { background: var(--danger-color); color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; margin-left: auto; font-weight: 800; }
 
         /* Layout */
         .main-wrapper{
@@ -578,12 +665,42 @@ try {
 <header>
     <div class="nav-container">
         <a href="index.php" class="logo">
-            <h1>🚀 PHP Forum</h1>
+            <h1>✌️ Talk Forum</h1>
         </a>
 
-        <button id="themeBtn" class="btn-control">
-            🌓 主題
-        </button>
+        <div style="display:flex; align-items:center; gap:15px;">
+            <button id="themeBtn" title="切換主題" style="background:none; border:none; cursor:pointer; font-size:1.3rem; padding:5px; border-radius:50%;">🌓</button>
+            <?php if (isset($_SESSION["user_id"])): ?>
+                <div style="position:relative;">
+                    <div class="user-trigger" id="userTrigger">
+                        <img src="<?= !empty($_SESSION['profile_img']) ? "uploads/users_profile_img/".$_SESSION['profile_img'] : "uploads/default_avatar.png" ?>" style="width:32px; height:32px; border-radius:50%; object-fit:cover; border: 2px solid <?= $isAdmin ? 'var(--admin-color)' : 'var(--accent-color)' ?>;">
+                        <span style="<?= $isAdmin ? 'color: var(--admin-color);' : '' ?>"><?= htmlspecialchars($_SESSION["username"]) ?></span>
+                        <?php 
+                        $totalNotif = $unreadAnnouncementsCount + ($isAdmin ? $pendingReportsCount : 0);
+                        if ($totalNotif > 0): ?>
+                            <div class="notification-badge"><?= $totalNotif ?></div>
+                        <?php endif; ?>
+                    </div>
+                    <div class="dropdown-menu" id="dropdownMenu">
+                        <div style="padding: 10px 20px; font-size: 0.7rem; color: var(--text-muted); font-weight: 800; text-transform: uppercase;">使用者功能</div>
+                        <a href="profile.php?id=<?= $_SESSION['user_id'] ?>">👤 我的個人資料</a>
+                        <a href="index.php?view=history">🕒 歷史瀏覽紀錄</a>
+                        <a href="create_post.php">✍️ 撰寫新文章</a>
+                        <?php if ($isAdmin): ?>
+                            <div style="padding: 10px 20px; font-size: 0.7rem; color: var(--admin-color); font-weight: 800; text-transform: uppercase; background: var(--admin-soft);">管理員功能</div>
+                            <a href="admin_dashboard.php" class="admin-link">📊 後台數據首頁</a>
+                            <a href="admin_reports.php" class="admin-link">🚩 檢舉審核 
+                                <?php if($pendingReportsCount > 0): ?><span class="badge-inline"><?= $pendingReportsCount ?></span><?php endif; ?>
+                            </a>
+                            <a href="admin_categories.php" class="admin-link">🛠️ 看板管理</a>
+                        <?php endif; ?>
+                        <a href="logout.php" style="color:#ef4444; font-weight:700;">🚪 登出系統</a>
+                    </div>
+                </div>
+            <?php else: ?>
+                <a href="login.php" style="text-decoration:none; background:var(--accent-color); color:white; padding:8px 20px; border-radius:50px; font-weight:700;">登入</a>
+            <?php endif; ?>
+        </div>
     </div>
 </header>
 
@@ -741,6 +858,21 @@ themeBtn.onclick = () => {
     document.body.setAttribute('data-theme', targetTheme);
     localStorage.setItem('theme', targetTheme);
 };
+
+/* =========================
+    Dropdown Menu 下拉選單切換互動
+========================= */
+const userTrigger = document.getElementById('userTrigger');
+const dropdownMenu = document.getElementById('dropdownMenu');
+if(userTrigger && dropdownMenu) {
+    userTrigger.onclick = (e) => { 
+        e.stopPropagation(); 
+        dropdownMenu.classList.toggle('active'); 
+    };
+    document.addEventListener('click', (e) => {
+        if (!userTrigger.contains(e.target)) dropdownMenu.classList.remove('active');
+    });
+}
 
 /* =========================
     Editor & Files (新圖片/影片即時預覽與嵌入)
