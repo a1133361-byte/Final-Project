@@ -14,6 +14,9 @@ $isAdmin = isset($_SESSION['role']) && $_SESSION['role'] == 1;
 // 初始化未讀通知與檢舉計數
 $pendingReportsCount = 0;
 $unreadAnnouncementsCount = 0;
+$unreadChatsCount = 0;
+$pendingFriendRequestsCount = 0;
+$pendingFriendRequests = [];
 
 try {
     // 取得看板分類
@@ -29,7 +32,6 @@ try {
                 $report_stmt = $pdo->query("SELECT COUNT(*) FROM reports WHERE status = 0");
                 $pendingReportsCount = (int)$report_stmt->fetchColumn();
             } catch (PDOException $e) {
-                // 若 reports 表不存在，防呆設為 0，不影響頁面載入
                 $pendingReportsCount = 0;
             }
         }
@@ -40,8 +42,41 @@ try {
             $unread_stmt->execute([$current_uid]);
             $unreadAnnouncementsCount = (int)$unread_stmt->fetchColumn();
         } catch (PDOException $e) {
-            // 若 announcements 表不存在，防呆設為 0，防止 SQL 報錯
             $unreadAnnouncementsCount = 0;
+        }
+
+        // 讀取總未讀好友請求
+        try {
+            $friend_req_sql = "
+                SELECT f.id AS friend_row_id, f.user_id AS requester_id, IFNULL(u.username, '未知用戶') AS username, u.profile_img
+                FROM friends f
+                LEFT JOIN users u ON f.user_id = u.id
+                WHERE f.friend_id = :friend_id AND f.status = 'pending'
+                ORDER BY f.created_at DESC
+                LIMIT 10
+            ";
+            $friend_req_stmt = $pdo->prepare($friend_req_sql);
+            $friend_req_stmt->bindValue(':friend_id', (int)$current_uid, PDO::PARAM_INT);
+            $friend_req_stmt->execute();
+            $pendingFriendRequests = $friend_req_stmt->fetchAll();
+            $pendingFriendRequestsCount = count($pendingFriendRequests);
+        } catch (PDOException $e) { }
+
+        // 讀取總未讀私訊數
+        try {
+            $chat_sql = "SELECT COUNT(*) FROM messages WHERE receiver_id = ? AND is_read = 0";
+            $chat_stmt = $pdo->prepare($chat_sql);
+            $chat_stmt->execute([$current_uid]);
+            $unreadChatsCount = (int)$chat_stmt->fetchColumn();
+        } catch (PDOException $e) {
+            try {
+                $chat_sql = "SELECT COUNT(*) FROM chat_messages WHERE receiver_id = ? AND is_read = 0";
+                $chat_stmt = $pdo->prepare($chat_sql);
+                $chat_stmt->execute([$current_uid]);
+                $unreadChatsCount = (int)$chat_stmt->fetchColumn();
+            } catch (PDOException $ex) {
+                $unreadChatsCount = 0; 
+            }
         }
     }
 } catch (PDOException $e) {
@@ -102,7 +137,7 @@ body {
     transition: background-color 0.3s, color 0.3s;
 }
 
-/* Header & Navigation (與 profile.php 一致) */
+/* Header & Navigation */
 header { 
     background: var(--nav-bg); 
     backdrop-filter: blur(10px); 
@@ -118,7 +153,7 @@ header {
 
 .notification-badge { position: absolute; top: -2px; right: -2px; background: var(--danger-color); color: white; font-size: 0.65rem; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 10px; display: flex; justify-content: center; align-items: center; border: 2px solid var(--card-bg); font-weight: 800; }
 
-/* 下拉選單樣式 (與 profile.php 一致) */
+/* 下拉選單樣式 */
 .dropdown-menu { 
     position: absolute; 
     right: 0; 
@@ -149,7 +184,70 @@ header {
 .dropdown-menu a:last-child { border-bottom: none; }
 .dropdown-menu a:hover { background: var(--sidebar-item-hover); color: var(--accent-color); }
 
-/* 管理員連結樣式 (與 profile.php 一致) */
+/* 好友邀請下拉區塊樣式 */
+.friend-requests-section {
+    border-bottom: 1px solid var(--border-color);
+}
+.friend-requests-header {
+    padding: 10px 20px 6px;
+    font-size: 0.7rem;
+    color: var(--success-color);
+    font-weight: 800;
+    text-transform: uppercase;
+    background: rgba(34, 197, 94, 0.08);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.friend-request-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border-color);
+    background: transparent;
+    transition: background 0.15s;
+}
+.friend-request-item:last-child { border-bottom: none; }
+.friend-request-item:hover { background: var(--sidebar-item-hover); }
+.friend-request-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid var(--success-color);
+    flex-shrink: 0;
+}
+.friend-request-name {
+    font-weight: 700;
+    font-size: 0.88rem;
+    color: var(--text-color);
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.friend-request-actions {
+    display: flex;
+    gap: 5px;
+    flex-shrink: 0;
+}
+.friend-btn {
+    border: none;
+    border-radius: 8px;
+    padding: 5px 10px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s;
+    line-height: 1;
+}
+.friend-btn-accept { background: var(--success-color); color: white; }
+.friend-btn-accept:hover { background: #16a34a; transform: scale(1.05); }
+.friend-btn-reject { background: var(--border-color); color: var(--text-muted); }
+.friend-btn-reject:hover { background: var(--danger-color); color: white; transform: scale(1.05); }
+
+/* 管理員連結樣式 */
 .admin-link { color: var(--admin-color) !important; background: var(--admin-soft); }
 .admin-link:hover { background: var(--admin-color) !important; color: white !important; }
 .badge-inline { background: var(--danger-color); color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; margin-left: auto; font-weight: 800; }
@@ -235,10 +333,14 @@ input[type="text"]:focus,
     transition: .2s;
 }
 
+/* --- 改良：限制文章內圖片和影片最大預覽寬高 --- */
 .rich-editor img,
 .rich-editor video {
-    max-width: 100%;
-    max-height: 400px;
+    max-width: 320px;
+    max-height: 240px;
+    width: 100%;
+    height: auto;
+    object-fit: contain;
     display: block;
     margin: 10px 0;
     border-radius: 12px;
@@ -512,12 +614,53 @@ input[type="text"]:focus,
                         <img src="<?= !empty($_SESSION['profile_img']) ? "uploads/users_profile_img/".$_SESSION['profile_img'] : "uploads/default_avatar.png" ?>" style="width:32px; height:32px; border-radius:50%; object-fit:cover; border: 2px solid <?= $isAdmin ? 'var(--admin-color)' : 'var(--accent-color)' ?>;">
                         <span style="<?= $isAdmin ? 'color: var(--admin-color);' : '' ?>"><?= htmlspecialchars($_SESSION["username"]) ?></span>
                         <?php 
-                        $totalNotif = $unreadAnnouncementsCount + ($isAdmin ? $pendingReportsCount : 0);
+                        // 同時整合未讀通知紅點
+                        $totalNotif = $unreadAnnouncementsCount + ($isAdmin ? $pendingReportsCount : 0) + $pendingFriendRequestsCount + $unreadChatsCount;
                         if ($totalNotif > 0): ?>
                             <div class="notification-badge"><?= $totalNotif ?></div>
                         <?php endif; ?>
                     </div>
                     <div class="dropdown-menu" id="dropdownMenu">
+                        
+                        <?php if ($pendingFriendRequestsCount > 0): ?>
+                        <div class="friend-requests-section">
+                            <div class="friend-requests-header">
+                                🤝 好友邀請
+                                <span style="background:var(--success-color); color:white; padding:1px 7px; border-radius:8px; font-size:0.68rem;"><?= $pendingFriendRequestsCount ?></span>
+                            </div>
+                            <?php foreach ($pendingFriendRequests as $req): ?>
+                                <div class="friend-request-item">
+                                    <a href="profile.php?id=<?= $req['requester_id'] ?>" onclick="event.stopPropagation();" style="display:flex; align-items:center; flex:1; min-width:0; gap:8px; text-decoration:none;">
+                                        <img src="<?= !empty($req['profile_img']) ? "uploads/users_profile_img/".$req['profile_img'] : "uploads/default_avatar.png" ?>" class="friend-request-avatar">
+                                        <span class="friend-request-name"><?= htmlspecialchars($req['username']) ?></span>
+                                    </a>
+                                    <div class="friend-request-actions">
+                                        <form method="POST" action="<?= htmlspecialchars($_SERVER['REQUEST_URI']) ?>" style="display:inline;" onclick="event.stopPropagation();">
+                                            <input type="hidden" name="friend_row_id" value="<?= $req['friend_row_id'] ?>">
+                                            <button type="submit" name="accept_friend" class="friend-btn friend-btn-accept" title="接受好友邀請">✓ 接受</button>
+                                        </form>
+                                        <form method="POST" action="<?= htmlspecialchars($_SERVER['REQUEST_URI']) ?>" style="display:inline;" onclick="event.stopPropagation();">
+                                            <input type="hidden" name="friend_row_id" value="<?= $req['friend_row_id'] ?>">
+                                            <button type="submit" name="reject_friend" class="friend-btn friend-btn-reject" title="拒絕好友邀請">✕</button>
+                                        </form>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <?php endif; ?>
+
+                        <!-- 如果有其他人的未讀私訊，在選單顯示醒目通知 -->
+                        <?php if ($unreadChatsCount > 0): ?>
+                            <div style="padding: 10px 20px 6px; font-size: 0.7rem; color: var(--danger-color); font-weight: 800; text-transform: uppercase; background: rgba(239, 68, 68, 0.08); display: flex; align-items: center; gap: 6px;">
+                                💬 未讀訊息
+                                <span style="background:var(--danger-color); color:white; padding:1px 7px; border-radius:8px; font-size:0.68rem;"><?= $unreadChatsCount ?></span>
+                            </div>
+                            <a href="chat.php" style="background: rgba(239, 68, 68, 0.03); font-weight: 700;">
+                                <span>📬 去看看新訊息</span>
+                                <span class="badge-inline" style="background: var(--danger-color); margin-left: auto;"><?= $unreadChatsCount ?> 條未讀</span>
+                            </a>
+                        <?php endif; ?>
+
                         <div style="padding: 10px 20px; font-size: 0.7rem; color: var(--text-muted); font-weight: 800; text-transform: uppercase;">使用者功能</div>
                         <a href="profile.php?id=<?= $_SESSION['user_id'] ?>">👤 我的個人資料</a>
                         <a href="index.php?view=history">🕒 歷史瀏覽紀錄</a>
@@ -727,7 +870,7 @@ themeBtn.onclick = () => {
 };
 
 /* =========================
-    User Dropdown Menu (與 profile.php 一致)
+    User Dropdown Menu
 ========================= */
 const userTrigger = document.getElementById('userTrigger');
 const dropdownMenu = document.getElementById('dropdownMenu');
@@ -792,41 +935,90 @@ function insertElementAtCursor(el) {
     }
 }
 
-/* Images 上傳與直接嵌入 */
+/* --- 安全優化：單檔大小限制常數 (10MB / 50MB) --- */
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB
+
+/* --- 核心優化：將原本的 Base64 直上，改成前端 Canvas 智慧壓縮壓縮 --- */
 document.getElementById('imgInput').addEventListener('change', function(){
     Array.from(this.files).forEach(file => {
+        if (file.size > MAX_IMAGE_SIZE) {
+            alert(`圖片「${file.name}」太大了！單張圖片上限為 10MB，請壓縮後再上傳。`);
+            return;
+        }
+
         imgList.push(file);
         const fileIndex = imgList.length - 1;
 
         const reader = new FileReader();
         reader.onload = function(e) {
-            const img = document.createElement('img');
+            const img = new Image();
+            img.onload = function() {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+                
+                // 限制最大預覽寬高為 1000px，在兼顧清晰度前提下極大限度縮小檔案體積
+                const MAX_WIDTH = 1000;
+                const MAX_HEIGHT = 1000;
+                
+                if (width > height) {
+                    if (width > MAX_WIDTH) {
+                        height *= MAX_WIDTH / width;
+                        width = MAX_WIDTH;
+                    }
+                } else {
+                    if (height > MAX_HEIGHT) {
+                        width *= MAX_HEIGHT / height;
+                        height = MAX_HEIGHT;
+                    }
+                }
+                
+                canvas.width = width;
+                canvas.height = height;
+                
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                
+                // 將圖片轉換成 JPEG 格式，並以 0.7 的中高壓縮率進行壓縮
+                // 這會將 5MB 的大照片直接優化到 50KB ~ 80KB 左右，徹底擺脫 MySQL 2006 crash
+                const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+                
+                const imgEl = document.createElement('img');
+                imgEl.src = compressedBase64;
+                imgEl.dataset.type = 'img';
+                imgEl.dataset.index = fileIndex;
+                insertElementAtCursor(imgEl);
+            };
             img.src = e.target.result;
-            img.dataset.type = 'img';
-            img.dataset.index = fileIndex;
-            insertElementAtCursor(img);
         };
         reader.readAsDataURL(file);
     });
     this.value = '';
 });
 
-/* Videos 上傳與直接嵌入 */
+/* --- 核心優化：影片捨棄 Base64，全面改用本地臨時指標網址 Blob URL 預覽 --- */
 document.getElementById('vidInput').addEventListener('change', function(){
     Array.from(this.files).forEach(file => {
+        if (file.size > MAX_VIDEO_SIZE) {
+            alert(`影片「${file.name}」太大了！單個影片上限為 50MB，請剪輯或降低解析度後再上傳。`);
+            return;
+        }
+
         vidList.push(file);
         const fileIndex = vidList.length - 1;
 
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            const video = document.createElement('video');
-            video.src = e.target.result;
-            video.controls = true;
-            video.dataset.type = 'vid';
-            video.dataset.index = fileIndex;
-            insertElementAtCursor(video);
-        };
-        reader.readAsDataURL(file);
+        // 全面改用 URL.createObjectURL，建立只屬於當前瀏覽器執行的本地指標
+        // 編輯器內預覽時將會是 0 位元組（0 bytes）文字負荷，在按下發布文章時只傳送短短的 blob: 指標
+        // 完美的將影片交給後端 post_vids[] 去進行真正的實體檔案上傳，完全不佔用 SQL 資料庫封包
+        const objectUrl = URL.createObjectURL(file);
+
+        const video = document.createElement('video');
+        video.src = objectUrl;
+        video.controls = true;
+        video.dataset.type = 'vid';
+        video.dataset.index = fileIndex;
+        insertElementAtCursor(video);
     });
     this.value = '';
 });

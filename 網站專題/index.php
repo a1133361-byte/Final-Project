@@ -93,6 +93,7 @@ $pendingReportsCount = 0;
 $unreadAnnouncementsCount = 0;
 $pendingFriendRequestsCount = 0;
 $pendingFriendRequests = [];
+$unreadChatsCount = 0; // 新增：未讀聊天訊息統計計數器
 
 if (isset($_SESSION['user_id'])) {
     $uid = $_SESSION['user_id'];
@@ -125,6 +126,23 @@ if (isset($_SESSION['user_id'])) {
         $friend_req_stmt->execute();
         $pendingFriendRequests = $friend_req_stmt->fetchAll();
         $pendingFriendRequestsCount = count($pendingFriendRequests);
+        
+        // --- 讀取未讀聊天訊息數 (安全防護機制，避免資料表未就緒造成崩潰) ---
+        try {
+            $chat_sql = "SELECT COUNT(*) FROM messages WHERE receiver_id = ? AND is_read = 0";
+            $chat_stmt = $pdo->prepare($chat_sql);
+            $chat_stmt->execute([$uid]);
+            $unreadChatsCount = (int)$chat_stmt->fetchColumn();
+        } catch (PDOException $e) {
+            try {
+                $chat_sql = "SELECT COUNT(*) FROM chat_messages WHERE receiver_id = ? AND is_read = 0";
+                $chat_stmt = $pdo->prepare($chat_sql);
+                $chat_stmt->execute([$uid]);
+                $unreadChatsCount = (int)$chat_stmt->fetchColumn();
+            } catch (PDOException $ex) {
+                $unreadChatsCount = 0; 
+            }
+        }
         
     } catch (PDOException $e) { }
 }
@@ -172,10 +190,26 @@ try {
     $my_friends = [];
     $friend_ids = [];
     if (isset($_SESSION['user_id'])) {
-        $f_sql = "SELECT users.id, users.username, users.profile_img FROM friends JOIN users ON friends.friend_id = users.id WHERE friends.user_id = ? AND friends.status = 'accepted' LIMIT 10";
-        $f_stmt = $pdo->prepare($f_sql);
-        $f_stmt->execute([$_SESSION['user_id']]);
-        $my_friends = $f_stmt->fetchAll();
+        try {
+            // 嘗試連同來自該好友的未讀訊息一併取出 (安全查詢設計)
+            $f_sql = "SELECT users.id, users.username, users.profile_img, 
+                             (SELECT COUNT(*) FROM messages WHERE sender_id = users.id AND receiver_id = ? AND is_read = 0) AS unread_count
+                      FROM friends 
+                      JOIN users ON friends.friend_id = users.id 
+                      WHERE friends.user_id = ? AND friends.status = 'accepted' 
+                      LIMIT 10";
+            $f_stmt = $pdo->prepare($f_sql);
+            $f_stmt->execute([$_SESSION['user_id'], $_SESSION['user_id']]);
+            $my_friends = $f_stmt->fetchAll();
+        } catch (PDOException $e) {
+            // 回退至原始查詢以保證安全相容性
+            try {
+                $f_sql = "SELECT users.id, users.username, users.profile_img FROM friends JOIN users ON friends.friend_id = users.id WHERE friends.user_id = ? AND friends.status = 'accepted' LIMIT 10";
+                $f_stmt = $pdo->prepare($f_sql);
+                $f_stmt->execute([$_SESSION['user_id']]);
+                $my_friends = $f_stmt->fetchAll();
+            } catch (PDOException $ex) { }
+        }
         $friend_ids = array_column($my_friends, 'id');
     }
 
@@ -790,7 +824,8 @@ try {
                         <img src="<?= !empty($_SESSION['profile_img']) ? "uploads/users_profile_img/".$_SESSION['profile_img'] : "uploads/default_avatar.png" ?>" style="width:32px; height:32px; border-radius:50%; object-fit:cover; border: 2px solid <?= $isAdmin ? 'var(--admin-color)' : 'var(--accent-color)' ?>;">
                         <span style="<?= $isAdmin ? 'color: var(--admin-color);' : '' ?>"><?= htmlspecialchars($_SESSION["username"]) ?></span>
                         <?php 
-                        $totalNotif = $unreadAnnouncementsCount + ($isAdmin ? $pendingReportsCount : 0) + $pendingFriendRequestsCount;
+                        // 將未讀聊天訊息 $unreadChatsCount 同步加進總通知紅點中
+                        $totalNotif = $unreadAnnouncementsCount + ($isAdmin ? $pendingReportsCount : 0) + $pendingFriendRequestsCount + $unreadChatsCount;
                         if ($totalNotif > 0): 
                         ?>
                             <div class="notification-badge"><?= $totalNotif ?></div>
@@ -824,6 +859,19 @@ try {
                             <?php endforeach; ?>
                         </div>
                         <?php endif; ?>
+
+                        <!-- 新增：下拉選單中的未讀訊息通知 -->
+                        <?php if ($unreadChatsCount > 0): ?>
+                            <div style="padding: 10px 20px 6px; font-size: 0.7rem; color: var(--danger-color); font-weight: 800; text-transform: uppercase; background: rgba(239, 68, 68, 0.08); display: flex; align-items: center; gap: 6px;">
+                                💬 未讀訊息
+                                <span style="background:var(--danger-color); color:white; padding:1px 7px; border-radius:8px; font-size:0.68rem;"><?= $unreadChatsCount ?></span>
+                            </div>
+                            <a href="chat.php" style="background: rgba(239, 68, 68, 0.03); font-weight: 700;">
+                                <span>📬 去看看新訊息</span>
+                                <span class="badge-inline" style="background: var(--danger-color); margin-left: auto;"><?= $unreadChatsCount ?> 條未讀</span>
+                            </a>
+                        <?php endif; ?>
+
                         <div style="padding: 10px 20px; font-size: 0.7rem; color: var(--text-muted); font-weight: 800; text-transform: uppercase;">使用者功能</div>
                         <a href="profile.php?id=<?= $_SESSION['user_id'] ?>">👤 我的個人資料</a>
                         <a href="index.php?view=history">🕒 歷史瀏覽紀錄</a>
@@ -858,7 +906,9 @@ try {
         <a href="index.php?view=hot" class="menu-link <?= $viewHot ? 'active' : '' ?>">🔥 熱門文章</a>
         
         <?php if(isset($_SESSION['user_id'])): ?>
-            <a href="index.php?view=friends_activity" class="menu-link <?= $viewFriendsActivity ? 'active' : '' ?>">✨ 好友動態</a>
+            <a href="index.php?view=friends_activity" class="menu-link <?= $viewFriendsActivity ? 'active' : '' ?>">
+                ✨ 好友動態
+            </a>
         <?php endif; ?>
         
         <a href="index.php?view=categories" class="menu-link <?= $viewCategories ? 'active' : '' ?>">📂 所有看板</a>
@@ -1011,16 +1061,34 @@ try {
         </div>
 
         <div style="background:var(--card-bg); padding:25px; border-radius:24px; border:1px solid var(--border-color);">
-            <h3 style="margin-top:0; font-size:1.1rem;">🤝 在線好友</h3>
+            <h3 style="margin-top:0; font-size:1.1rem; display: flex; align-items: center; justify-content: space-between;">
+                <span>🤝 好友</span>
+                <!-- 當有未讀聊天訊息時，在好友標題右邊顯示醒目紅點通知 -->
+                <?php if ($unreadChatsCount > 0): ?>
+                    <span style="background: var(--danger-color); color: white; font-size: 0.75rem; padding: 2px 8px; border-radius: 12px; font-weight: 800; animation: pulse 2s infinite;"><?= $unreadChatsCount ?> 未讀</span>
+                <?php endif; ?>
+            </h3>
             <div style="display:flex; flex-direction:column; gap:15px;">
                 <?php if (isset($_SESSION['user_id']) && count($my_friends) > 0): ?>
                     <?php foreach ($my_friends as $f): ?>
                         <div style="display:flex; align-items:center; justify-content:space-between;">
-                            <a href="profile.php?id=<?= $f['id'] ?>" style="display:flex; align-items:center; gap:10px; text-decoration:none; color:inherit;">
-                                <img src="<?= !empty($f['profile_img']) ? "uploads/users_profile_img/".$f['profile_img'] : "uploads/default_avatar.png" ?>" style="width:35px; height:35px; border-radius:50%; object-fit:cover;">
+                            <a href="profile.php?id=<?= $f['id'] ?>" style="display:flex; align-items:center; gap:10px; text-decoration:none; color:inherit; position: relative;">
+                                <div style="position: relative; display: inline-block;">
+                                    <img src="<?= !empty($f['profile_img']) ? "uploads/users_profile_img/".$f['profile_img'] : "uploads/default_avatar.png" ?>" style="width:35px; height:35px; border-radius:50%; object-fit:cover;">
+                                    <!-- 新增：如果有來自此好友的未讀訊息，顯示紅色閃爍小圓點 -->
+                                    <?php if (isset($f['unread_count']) && $f['unread_count'] > 0): ?>
+                                        <span style="position: absolute; top: -2px; right: -2px; width: 10px; height: 10px; background: var(--danger-color); border: 2px solid var(--card-bg); border-radius: 50%;"></span>
+                                    <?php endif; ?>
+                                </div>
                                 <span style="font-weight:700; font-size:0.9rem;"><?= htmlspecialchars($f['username']) ?></span>
                             </a>
-                            <a href="chat.php?user_id=<?= $f['id'] ?>" style="text-decoration:none;">💬</a>
+                            <a href="chat.php?user_id=<?= $f['id'] ?>" style="text-decoration:none; display: flex; align-items: center; gap: 5px;">
+                                💬
+                                <!-- 新增：好友右側直接顯示該好友未讀訊息之計數器 -->
+                                <?php if (isset($f['unread_count']) && $f['unread_count'] > 0): ?>
+                                    <span style="background: var(--danger-color); color: white; font-size: 0.7rem; font-weight: 800; padding: 1px 6px; border-radius: 8px;"><?= $f['unread_count'] ?></span>
+                                <?php endif; ?>
+                            </a>
                         </div>
                     <?php endforeach; ?>
                 <?php else: ?>
@@ -1167,6 +1235,7 @@ try {
     function appendMessage(text, sender) {
         const msgDiv = document.createElement('div');
         msgDiv.className = `ai-message ${sender}`;
+        msgDiv.text = text; // 保持原本與 php 安全機制相同的寫法
         msgDiv.innerText = text;
         aiChatMessages.appendChild(msgDiv);
         aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
