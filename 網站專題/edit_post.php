@@ -1061,6 +1061,8 @@ polishModal.onclick = (e) => {
 
 /* Submit 表單送出處理 */
 document.getElementById('editForm').addEventListener('submit', function(e){
+    e.preventDefault();
+
     // 檢查是否有 Placeholder 內容
     const placeholder = document.getElementById('placeholderSpan');
     if (placeholder) {
@@ -1074,23 +1076,46 @@ document.getElementById('editForm').addEventListener('submit', function(e){
     const remainingNewImgs = editor.querySelectorAll('img[data-type="new_img"]');
     const dataTransferImg = new DataTransfer();
     remainingNewImgs.forEach(img => {
-        const idx = img.dataset.index;
+        const idx = parseInt(img.dataset.index);
         if(newImgList[idx]) {
             dataTransferImg.items.add(newImgList[idx]);
         }
     });
     document.getElementById('hiddenNewFiles').files = dataTransferImg.files;
 
-    // 重新過濾被使用者留在編輯器裡面的「新影片」檔案
+    // 用 FormData 手動 append 影片，避免動態設定 .files 失效
     const remainingNewVids = editor.querySelectorAll('video[data-type="new_vid"]');
-    const dataTransferVid = new DataTransfer();
+    const formData = new FormData(this);
+
+    // fetch 不帶 submit button，手動補上讓後端驗證通過
+    formData.append('submit_edit', '1');
+
+    // 移除原本空的 hiddenNewVids，改用手動 append
+    formData.delete('new_post_vids[]');
     remainingNewVids.forEach(vid => {
-        const idx = vid.dataset.index;
+        const idx = parseInt(vid.dataset.index);
         if(newVidList[idx]) {
-            dataTransferVid.items.add(newVidList[idx]);
+            formData.append('new_post_vids[]', newVidList[idx], newVidList[idx].name);
         }
     });
-    document.getElementById('hiddenNewVids').files = dataTransferVid.files;
+
+    fetch(this.action, {
+        method: 'POST',
+        body: formData
+    }).then(response => {
+        if (response.redirected) {
+            window.location.href = response.url;
+        } else {
+            return response.text().then(html => {
+                document.open();
+                document.write(html);
+                document.close();
+            });
+        }
+    }).catch(err => {
+        alert('儲存失敗，請稍後再試！');
+        console.error(err);
+    });
 });
 </script>
 

@@ -104,39 +104,68 @@ if (isset($_POST["submit_edit"])) {
         }
 
         // ==========================================
-        // 步驟 3: 處理「新影片上傳與富文本路徑替換」（選填）
+        // 步驟 3: 處理「新影片上傳與富文本路徑替換」
         // ==========================================
-        // 這裡的邏輯與圖片完全相同，如果您有需要啟用影片功能，可以解開此處：
-        /*
         if (!empty($_FILES['new_post_vids']['name'][0])) {
-            $dom = new DOMDocument();
-            @$dom->loadHTML(mb_convert_encoding($content, 'HTML-ENTITIES', 'UTF-8'), LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
-            $videos = $dom->getElementsByTagName('video');
+            $vid_upload_dir = "../uploads/post_vids/";
+
+            if (!is_dir($vid_upload_dir)) {
+                mkdir($vid_upload_dir, 0777, true);
+            }
+
+            $dom_vid = new DOMDocument();
+            @$dom_vid->loadHTML(mb_convert_encoding($content, 'HTML-ENTITIES', 'UTF-8'), LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+            $videos = $dom_vid->getElementsByTagName('video');
+
             $uploaded_vid_count = 0;
 
             foreach ($_FILES['new_post_vids']['tmp_name'] as $key => $tmp_name) {
                 if ($_FILES['new_post_vids']['error'][$key] === UPLOAD_ERR_OK) {
-                    $file_ext = pathinfo($_FILES['new_post_vids']['name'][$key], PATHINFO_EXTENSION);
-                    $new_vid_name = "vid_" . $post_id . "_" . uniqid() . "." . $file_ext;
-                    
-                    if (move_uploaded_file($tmp_name, "../uploads/post_imgs/" . $new_vid_name)) {
-                        foreach ($videos as $vid) {
-                            if ($vid->getAttribute('data-type') === 'new_vid') {
-                                if ($uploaded_vid_count == $key) {
-                                    $vid->setAttribute('src', "uploads/post_imgs/" . $new_vid_name);
-                                    $vid->removeAttribute('data-type');
-                                    $vid->removeAttribute('data-index');
-                                    break;
+                    $file_ext     = strtolower(pathinfo($_FILES['new_post_vids']['name'][$key], PATHINFO_EXTENSION));
+                    $allowed_vids = ['mp4', 'webm', 'ogg'];
+
+                    if (in_array($file_ext, $allowed_vids)) {
+                        $new_vid_name = "vid_" . $post_id . "_" . uniqid() . "." . $file_ext;
+                        $destination  = $vid_upload_dir . $new_vid_name;
+
+                        if (move_uploaded_file($tmp_name, $destination)) {
+                            // 寫入 post_videos 資料表
+                            $ins_vid_sql  = "INSERT INTO post_videos (post_id, video_path) VALUES (?, ?)";
+                            $ins_vid_stmt = $pdo->prepare($ins_vid_sql);
+                            $ins_vid_stmt->execute([$post_id, $new_vid_name]);
+
+                            // 找到富文本中第 N 個 data-type="new_vid" 的 <video>，替換 src
+                            $match_index = 0;
+                            foreach ($videos as $vid) {
+                                if ($vid->getAttribute('data-type') === 'new_vid') {
+                                    if ($match_index == $uploaded_vid_count) {
+                                        $vid->setAttribute('src', "uploads/post_vids/" . $new_vid_name);
+                                        $vid->removeAttribute('data-type');
+                                        $vid->removeAttribute('data-index');
+                                        // 移除編輯器可能帶入的原始尺寸屬性，避免顯示過大/不一致
+                                        $vid->removeAttribute('width');
+                                        $vid->removeAttribute('height');
+                                        $vid->removeAttribute('style');
+                                        // 統一套用固定顯示樣式與 class，與圖片顯示邏輯一致
+                                        $vid->setAttribute('class', 'post-inline-vid');
+                                        $vid->setAttribute('style', 'max-width:100%; max-height:400px; width:auto; height:auto;');
+                                        if (!$vid->hasAttribute('controls')) {
+                                            $vid->setAttribute('controls', 'controls');
+                                        }
+                                        break;
+                                    }
+                                    $match_index++;
                                 }
                             }
+                            $uploaded_vid_count++;
                         }
                     }
                 }
             }
-            $content = $dom->saveHTML();
+
+            $content = $dom_vid->saveHTML();
             $content = html_entity_decode($content, ENT_QUOTES, 'UTF-8');
         }
-        */
 
         // ==========================================
         // 步驟 4: 更新文章標題與內容到資料庫

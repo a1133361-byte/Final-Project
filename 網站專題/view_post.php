@@ -392,6 +392,19 @@ function renderPostContent($content, $images, $videos) {
         .content-text { font-size: 1.15rem; color: var(--text-color); line-height: 1.8; word-break: break-word; }
         .content-image-wrapper { margin: 30px 0; text-align: center; }
         .post-inline-img { max-width: 100%; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+        /* 影片顯示範圍固定上限，避免文章內影片過大撐爆版面（即使內文帶有舊的 width/height/style 也會被覆蓋） */
+        .post-content-body video,
+        .content-image-wrapper video,
+        .post-inline-vid {
+            max-width: 100% !important;
+            max-height: 400px !important;
+            width: auto !important;
+            height: auto !important;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            display: block;
+            margin: 0 auto;
+        }
 
         /* 底部按鈕區 */
         .post-footer-actions {

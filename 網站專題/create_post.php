@@ -1104,6 +1104,8 @@ polishModal.onclick = (e) => {
 
 /* Submit 表單送出處理 */
 document.getElementById('postForm').addEventListener('submit', function(e){
+    e.preventDefault();
+
     // 檢查是否有 Placeholder 內容
     const placeholder = document.getElementById('placeholderSpan');
     if (placeholder) {
@@ -1117,7 +1119,7 @@ document.getElementById('postForm').addEventListener('submit', function(e){
     const remainingImgs = editor.querySelectorAll('img[data-type="img"]');
     const dataTransferImg = new DataTransfer();
     remainingImgs.forEach(img => {
-        const idx = img.dataset.index;
+        const idx = parseInt(img.dataset.index);
         if(imgList[idx]) {
             dataTransferImg.items.add(imgList[idx]);
         }
@@ -1125,15 +1127,42 @@ document.getElementById('postForm').addEventListener('submit', function(e){
     document.getElementById('hiddenFiles').files = dataTransferImg.files;
 
     // 重新過濾被使用者留在編輯器裡面的影片檔案
+    // 改用 FormData 手動 append，避免動態設定 .files 在部分瀏覽器/伺服器環境失效
     const remainingVids = editor.querySelectorAll('video[data-type="vid"]');
-    const dataTransferVid = new DataTransfer();
+    const formData = new FormData(this);
+
+    // fetch 送出時 submit button 不會被帶入，手動補上讓後端驗證通過
+    formData.append('submit_post', '1');
+
+    // 移除原本空的 hiddenVids（避免送出空的 post_vids[]）
+    formData.delete('post_vids[]');
+
     remainingVids.forEach(vid => {
-        const idx = vid.dataset.index;
+        const idx = parseInt(vid.dataset.index);
         if(vidList[idx]) {
-            dataTransferVid.items.add(vidList[idx]);
+            formData.append('post_vids[]', vidList[idx], vidList[idx].name);
         }
     });
-    document.getElementById('hiddenVids').files = dataTransferVid.files;
+
+    // 用 fetch 送出 FormData，完整保留所有欄位與檔案
+    fetch(this.action, {
+        method: 'POST',
+        body: formData
+    }).then(response => {
+        // 後端若有 redirect header，fetch 會自動跟隨；若後端回傳 HTML 頁面則導向
+        if (response.redirected) {
+            window.location.href = response.url;
+        } else {
+            return response.text().then(html => {
+                document.open();
+                document.write(html);
+                document.close();
+            });
+        }
+    }).catch(err => {
+        alert('發布失敗，請稍後再試！');
+        console.error(err);
+    });
 });
 </script>
 

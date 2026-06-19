@@ -1,7 +1,7 @@
 <?php
 session_start();
 
-if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST["submit_post"]) && isset($_SESSION["user_id"])) {
+if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_SESSION["user_id"])) {
     
     $title = $_POST["title"];
     $content = $_POST["content"];
@@ -46,6 +46,35 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST["submit_post"]) && isse
                             $img_query = "INSERT INTO post_images (post_id, image_path) VALUES (?, ?);";
                             $img_stmt = $pdo->prepare($img_query);
                             $img_stmt->execute([$last_post_id, $new_file_name]);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. 處理多影片上傳
+        if (!empty($_FILES['post_vids']['name'][0])) {
+            $vfiles = $_FILES['post_vids'];
+            $vid_upload_dir = '../uploads/post_vids/';
+
+            if (!is_dir($vid_upload_dir)) {
+                mkdir($vid_upload_dir, 0777, true);
+            }
+
+            foreach ($vfiles['name'] as $key => $name) {
+                if ($vfiles['error'][$key] === 0) {
+                    $file_tmp  = $vfiles['tmp_name'][$key];
+                    $file_ext  = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+                    $allowed   = ['mp4', 'webm', 'ogg'];
+
+                    if (in_array($file_ext, $allowed)) {
+                        $new_file_name = uniqid('', true) . "_" . ($key + 1) . "." . $file_ext;
+                        $destination   = $vid_upload_dir . $new_file_name;
+
+                        if (move_uploaded_file($file_tmp, $destination)) {
+                            $vid_query = "INSERT INTO post_videos (post_id, video_path) VALUES (?, ?);";
+                            $vid_stmt  = $pdo->prepare($vid_query);
+                            $vid_stmt->execute([$last_post_id, $new_file_name]);
                         }
                     }
                 }
