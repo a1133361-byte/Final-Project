@@ -1226,7 +1226,7 @@ try {
 
         try {
             // 3. 發送請求至後端 PHP
-            const response = await fetch('api_ai_chat.php', {
+            const response = await fetch('api_ai_assistant.php', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'

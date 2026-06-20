@@ -94,7 +94,13 @@ $responseBody = "";
 $lastCurlError = "";
 
 for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
-    $ch = curl_init("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" . $apiKey);
+    // 仿照 polish.php 的寫法，拆解拼接網址並把多餘的分號拿掉
+    $scheme = "https:";
+    $domain = "generativelanguage.googleapis.com";
+    $path = "/v1beta/models/gemini-2.5-flash:generateContent?key=";
+    $fullUrl = $scheme . "//" . $domain . $path . $apiKey;
+    
+    $ch = curl_init($fullUrl);
     
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POST, true);
@@ -130,3 +136,4 @@ if ($success) {
 } else {
     echo json_encode(['reply' => "唉呀，我的伺服器大腦暫時連不上線！請確認您的 API Key 設定正確。網路連線失敗: " . $lastCurlError . " ❤️"]);
 }
+?>
