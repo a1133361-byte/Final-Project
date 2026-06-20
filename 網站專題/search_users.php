@@ -6,6 +6,13 @@ $u_search = isset($_GET['u_search']) ? trim($_GET['u_search']) : '';
 $current_user_id = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : null;
 $isAdmin = isset($_SESSION['role']) && $_SESSION['role'] == 1;
 
+// 未登入使用者不能使用搜尋功能
+$loginRequired = false;
+if ($u_search !== '' && !$current_user_id) {
+    $loginRequired = true;
+    $u_search = '';
+}
+
 // --- 0. 處理好友請求操作 (從頂部下拉選單觸發) ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && $current_user_id) {
     // ===== 接受好友請求 =====
@@ -109,11 +116,10 @@ $users_results = [];
 
 try {
     if ($u_search !== '') {
-        // 先獲取符合搜尋條件的用戶名單
-        $sql = "SELECT id, username, profile_img, bio FROM users WHERE username LIKE :search AND id != :my_id LIMIT 50";
+        // 先獲取符合搜尋條件的用戶名單（包含自己，方便使用者搜尋到自己的資料）
+        $sql = "SELECT id, username, profile_img, bio FROM users WHERE username LIKE :search LIMIT 50";
         $stmt = $pdo->prepare($sql);
         $stmt->bindValue(':search', '%' . $u_search . '%');
-        $stmt->bindValue(':my_id', $current_user_id);
         $stmt->execute();
         $raw_results = $stmt->fetchAll();
 
@@ -463,10 +469,20 @@ try {
 
     <div class="search-header">
         <h2>🔍 搜尋用戶結果</h2>
-        <p style="color: var(--text-muted);">正在搜尋關於 「<strong><?= htmlspecialchars($u_search) ?></strong>」 的結果...</p>
+        <?php if ($loginRequired): ?>
+            <p style="color: var(--text-muted);">目前未顯示搜尋結果。</p>
+        <?php else: ?>
+            <p style="color: var(--text-muted);">正在搜尋關於 「<strong><?= htmlspecialchars($u_search) ?></strong>」 的結果...</p>
+        <?php endif; ?>
     </div>
 
-    <?php if (count($users_results) > 0): ?>
+    <?php if ($loginRequired): ?>
+        <div class="empty-state">
+            <h3>🔒 請先登入才能使用搜尋功能</h3>
+            <p style="color: var(--text-muted);">登入後即可搜尋論壇上的所有用戶，包括你自己的資料。</p>
+            <a href="login.php" style="display:inline-block; margin-top:20px; background:var(--accent-color); color:white; text-decoration:none; padding:10px 25px; border-radius:12px; font-weight:700;">前往登入</a>
+        </div>
+    <?php elseif (count($users_results) > 0): ?>
         <div class="user-grid">
             <?php foreach ($users_results as $user): ?>
                 <div class="user-card">
@@ -477,13 +493,6 @@ try {
                     </div>
                     <div class="action-btns">
                         <a href="profile.php?id=<?= $user['id'] ?>" class="btn btn-secondary">查看資料</a>
-                        <?php if (isset($_SESSION['user_id'])): ?>
-                            <?php if ($user['is_friend']): ?>
-                                <a href="remove_friend.php?id=<?= $user['id'] ?>" class="btn btn-danger" onclick="return confirm('確定要刪除好友嗎？');">刪除好友</a>
-                            <?php else: ?>
-                                <a href="add_friend.php?id=<?= $user['id'] ?>" class="btn btn-primary">加好友</a>
-                            <?php endif; ?>
-                        <?php endif; ?>
                     </div>
                 </div>
             <?php endforeach; ?>

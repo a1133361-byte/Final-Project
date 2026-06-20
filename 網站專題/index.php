@@ -90,61 +90,56 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SESSION['user_id'])) {
 
 // --- 初始化計數器 ---
 $pendingReportsCount = 0;
-$unreadAnnouncementsCount = 0;
 $pendingFriendRequestsCount = 0;
 $pendingFriendRequests = [];
-$unreadChatsCount = 0; // 新增：未讀聊天訊息統計計數器
+$unreadChatsCount = 0;
 
 if (isset($_SESSION['user_id'])) {
     $uid = $_SESSION['user_id'];
-    try {
-        if ($isAdmin) {
-            $report_sql = "SELECT COUNT(*) FROM reports WHERE status = 0";
-            $report_stmt = $pdo->query($report_sql);
+
+    // 管理員：待審檢舉數
+    if ($isAdmin) {
+        try {
+            $report_stmt = $pdo->query("SELECT COUNT(*) FROM reports WHERE status = 0");
             $pendingReportsCount = (int)$report_stmt->fetchColumn();
+        } catch (PDOException $e) {
+            $pendingReportsCount = 0;
         }
+    }
 
-        $unread_sql = "SELECT COUNT(*) FROM announcements 
-                       WHERE created_at > (
-                           SELECT IFNULL(last_announcement_view, '1970-01-01 00:00:00') 
-                           FROM users WHERE id = ?
-                       )";
-        $unread_stmt = $pdo->prepare($unread_sql);
-        $unread_stmt->execute([$uid]);
-        $unreadAnnouncementsCount = (int)$unread_stmt->fetchColumn();
-
+    // 好友邀請通知
+    try {
         $friend_req_sql = "
             SELECT f.id AS friend_row_id, f.user_id AS requester_id, IFNULL(u.username, '未知用戶') AS username, u.profile_img
             FROM friends f
             LEFT JOIN users u ON f.user_id = u.id
-            WHERE f.friend_id = :friend_id AND f.status = 'pending'
+            WHERE f.friend_id = ? AND f.status = 'pending'
             ORDER BY f.created_at DESC
             LIMIT 10
         ";
         $friend_req_stmt = $pdo->prepare($friend_req_sql);
-        $friend_req_stmt->bindValue(':friend_id', (int)$uid, PDO::PARAM_INT);
-        $friend_req_stmt->execute();
+        $friend_req_stmt->execute([(int)$uid]);
         $pendingFriendRequests = $friend_req_stmt->fetchAll();
         $pendingFriendRequestsCount = count($pendingFriendRequests);
-        
-        // --- 讀取未讀聊天訊息數 (安全防護機制，避免資料表未就緒造成崩潰) ---
+    } catch (PDOException $e) {
+        $pendingFriendRequestsCount = 0;
+        $pendingFriendRequests = [];
+    }
+
+    // 未讀聊天訊息數
+    try {
+        $chat_stmt = $pdo->prepare("SELECT COUNT(*) FROM messages WHERE receiver_id = ? AND is_read = 0");
+        $chat_stmt->execute([$uid]);
+        $unreadChatsCount = (int)$chat_stmt->fetchColumn();
+    } catch (PDOException $e) {
         try {
-            $chat_sql = "SELECT COUNT(*) FROM messages WHERE receiver_id = ? AND is_read = 0";
-            $chat_stmt = $pdo->prepare($chat_sql);
+            $chat_stmt = $pdo->prepare("SELECT COUNT(*) FROM chat_messages WHERE receiver_id = ? AND is_read = 0");
             $chat_stmt->execute([$uid]);
             $unreadChatsCount = (int)$chat_stmt->fetchColumn();
-        } catch (PDOException $e) {
-            try {
-                $chat_sql = "SELECT COUNT(*) FROM chat_messages WHERE receiver_id = ? AND is_read = 0";
-                $chat_stmt = $pdo->prepare($chat_sql);
-                $chat_stmt->execute([$uid]);
-                $unreadChatsCount = (int)$chat_stmt->fetchColumn();
-            } catch (PDOException $ex) {
-                $unreadChatsCount = 0; 
-            }
+        } catch (PDOException $ex) {
+            $unreadChatsCount = 0;
         }
-        
-    } catch (PDOException $e) { }
+    }
 }
 
 try {
@@ -548,6 +543,27 @@ try {
         .search-box button { background: var(--accent-color); color: white; border: none; padding: 10px 20px; border-radius: 14px; cursor: pointer; font-weight: 700; }
 
         .post-card, .activity-card { background: var(--card-bg); border-radius: 20px; padding: 25px; margin-bottom: 20px; border: 1px solid var(--border-color); transition: 0.3s; }
+
+        /* 好友動態：依類型區分樣式 */
+        .activity-card { border-left: 5px solid var(--border-color); }
+        .activity-card.activity-post { border-left-color: var(--accent-color); }
+        .activity-card.activity-comment { border-left-color: #f59e0b; }
+        .activity-card.activity-like { border-left-color: var(--danger-color); }
+
+        .activity-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.7rem;
+            font-weight: 800;
+            padding: 3px 10px;
+            border-radius: 50px;
+            margin-left: 8px;
+            vertical-align: middle;
+        }
+        .tag-post { background: var(--accent-soft); color: var(--accent-color); }
+        .tag-comment { background: rgba(245, 158, 11, 0.12); color: #f59e0b; }
+        .tag-like { background: rgba(239, 68, 68, 0.12); color: var(--danger-color); }
         .post-card:hover { transform: translateY(-3px); box-shadow: 0 10px 20px rgba(0,0,0,0.05); }
 
         .category-list-container {
@@ -824,8 +840,7 @@ try {
                         <img src="<?= !empty($_SESSION['profile_img']) ? "uploads/users_profile_img/".$_SESSION['profile_img'] : "uploads/default_avatar.png" ?>" style="width:32px; height:32px; border-radius:50%; object-fit:cover; border: 2px solid <?= $isAdmin ? 'var(--admin-color)' : 'var(--accent-color)' ?>;">
                         <span style="<?= $isAdmin ? 'color: var(--admin-color);' : '' ?>"><?= htmlspecialchars($_SESSION["username"]) ?></span>
                         <?php 
-                        // 將未讀聊天訊息 $unreadChatsCount 同步加進總通知紅點中
-                        $totalNotif = $unreadAnnouncementsCount + ($isAdmin ? $pendingReportsCount : 0) + $pendingFriendRequestsCount + $unreadChatsCount;
+                        $totalNotif = ($isAdmin ? $pendingReportsCount : 0) + $pendingFriendRequestsCount + $unreadChatsCount;
                         if ($totalNotif > 0): 
                         ?>
                             <div class="notification-badge"><?= $totalNotif ?></div>
@@ -916,9 +931,6 @@ try {
         <?php if($announcementCatID): ?>
             <a href="index.php?category=<?= $announcementCatID ?>" class="menu-link <?= ($catID == $announcementCatID) ? 'active' : '' ?>">
                 📢 系統公告
-                <?php if($unreadAnnouncementsCount > 0): ?>
-                    <span class="badge-inline"><?= $unreadAnnouncementsCount ?></span>
-                <?php endif; ?>
             </a>
         <?php endif; ?>
 
@@ -985,9 +997,7 @@ try {
                         <div class="category-card-title">
                             <span class="category-card-prefix"><?= ($cat['name'] == '系統公告') ? '📢' : '#' ?></span>
                             <span><?= htmlspecialchars($cat['name']) ?></span>
-                            <?php if($cat['name'] == '系統公告' && $unreadAnnouncementsCount > 0): ?>
-                                <span class="badge-inline" style="margin-left:10px;"><?= $unreadAnnouncementsCount ?></span>
-                            <?php endif; ?>
+
                         </div>
                         <div class="category-card-arrow">➔</div>
                     </a>
@@ -996,14 +1006,17 @@ try {
 
         <?php elseif ($viewFriendsActivity): ?>
             <?php if (count($activities) > 0): ?>
+                <?php
+                    $activityIcons = ['post' => '📝', 'comment' => '💬', 'like' => '❤️'];
+                ?>
                 <?php foreach ($activities as $act): ?>
-                    <div class="activity-card">
+                    <div class="activity-card activity-<?= $act['type'] ?>">
                         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:15px;">
                             <div style="display:flex; align-items:center; gap:12px;">
                                 <img src="<?= !empty($act['profile_img']) ? "uploads/users_profile_img/".$act['profile_img'] : "uploads/default_avatar.png" ?>" style="width:40px; height:40px; border-radius:50%; object-fit:cover;">
                                 <div>
                                     <span style="font-weight:800;"><?= htmlspecialchars($act['username']) ?></span>
-                                    <span class="activity-tag tag-<?= $act['type'] ?>"><?= $act['type_cn'] ?></span>
+                                    <span class="activity-tag tag-<?= $act['type'] ?>"><?= $activityIcons[$act['type']] ?? '' ?> <?= $act['type_cn'] ?></span>
                                 </div>
                             </div>
                             <span style="color:var(--text-muted); font-size:0.85rem;"><?= date('Y/m/d H:i', strtotime($act['created_at'])) ?></span>
@@ -1054,10 +1067,17 @@ try {
     <aside class="right-sidebar">
         <div style="background:var(--card-bg); padding:25px; border-radius:24px; border:1px solid var(--border-color); margin-bottom:20px;">
             <h3 style="margin-top:0; font-size:1.1rem; margin-bottom:15px;">🔍 尋找用戶</h3>
+            <?php if (isset($_SESSION['user_id'])): ?>
             <form action="search_users.php" method="GET" class="small-search-box" style="display:flex; background:var(--bg-color); border:1px solid var(--border-color); border-radius:12px; padding:4px 4px 4px 12px; margin-bottom:15px;">
                 <input type="text" name="u_search" placeholder="輸入用戶名..." required style="border:none; background:transparent; color:var(--text-color); font-size:0.85rem; outline:none; flex:1;">
                 <button type="submit" style="background:var(--accent-color); color:white; border:none; padding:6px 12px; border-radius:8px; font-size:0.8rem; cursor:pointer;">搜尋</button>
             </form>
+            <?php else: ?>
+            <div style="display:flex; align-items:center; gap:8px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:12px; padding:10px 12px; margin-bottom:15px;">
+                <input type="text" placeholder="請先登入才能搜尋用戶" disabled style="border:none; background:transparent; color:var(--text-muted); font-size:0.85rem; outline:none; flex:1; cursor:not-allowed;">
+            </div>
+            <a href="login.php" style="display:block; text-align:center; background:var(--accent-color); color:white; text-decoration:none; padding:8px 12px; border-radius:8px; font-size:0.85rem; font-weight:700; margin-bottom:5px;">登入後即可搜尋用戶</a>
+            <?php endif; ?>
         </div>
 
         <div style="background:var(--card-bg); padding:25px; border-radius:24px; border:1px solid var(--border-color);">
