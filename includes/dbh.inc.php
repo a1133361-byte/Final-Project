@@ -36,3 +36,4 @@ try {
 } catch (PDOException $e) {
     die("資料庫連線失敗: " . $e->getMessage());
 }
+
