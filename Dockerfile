@@ -9,3 +9,5 @@ COPY . /var/www/html/
 
 # 4. 把檔案的讀寫權限設定好，讓網頁伺服器可以順利執行你的 PHP 檔案
 RUN chown -R www-data:www-data /var/www/html
+
+#5
