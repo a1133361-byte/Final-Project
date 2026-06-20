@@ -11,16 +11,32 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] != 1) {
 $message = "";
 $error = "";
 
-// 處理新增看板請求
-if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['action'] == 'add') {
-    $catName = trim($_POST['name']);
-    if (!empty($catName)) {
-        try {
-            $stmt = $pdo->prepare("INSERT INTO categories (name) VALUES (?)");
-            $stmt->execute([$catName]);
-            $message = "成功新增看板：$catName";
-        } catch (PDOException $e) {
-            $error = "新增失敗：" . $e->getMessage();
+// 處理新增或編輯看板請求
+if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action'])) {
+    if ($_POST['action'] == 'add') {
+        $catName = trim($_POST['name']);
+        if (!empty($catName)) {
+            try {
+                $stmt = $pdo->prepare("INSERT INTO categories (name) VALUES (?)");
+                $stmt->execute([$catName]);
+                $message = "成功新增看板：$catName";
+            } catch (PDOException $e) {
+                $error = "新增失敗：" . $e->getMessage();
+            }
+        }
+    } elseif ($_POST['action'] == 'edit') {
+        $catId = filter_var($_POST['id'], FILTER_VALIDATE_INT);
+        $catName = trim($_POST['name']);
+        if ($catId && !empty($catName)) {
+            try {
+                $stmt = $pdo->prepare("UPDATE categories SET name = ? WHERE id = ?");
+                $stmt->execute([$catName, $catId]);
+                $message = "看板名稱已成功更新為：$catName";
+            } catch (PDOException $e) {
+                $error = "編輯失敗：" . $e->getMessage();
+            }
+        } else {
+            $error = "無效的編輯資料。";
         }
     }
 }
@@ -61,6 +77,7 @@ try {
             --text-muted: #64748b;
             --border-color: #e2e8f0;
             --accent-color: #6366f1;
+            --accent-soft: rgba(99, 102, 241, 0.1);
             --admin-color: #f59e0b;
             --danger-color: #ef4444;
             --sidebar-item-hover: #f1f5f9;
@@ -252,8 +269,8 @@ try {
                     <td>#<?= $cat['id'] ?></td>
                     <td><strong><?= htmlspecialchars($cat['name']) ?></strong></td>
                     <td style="text-align:right;">
-                        <a href="#" class="btn-action btn-edit" onclick="editCat(<?= $cat['id'] ?>, '<?= htmlspecialchars($cat['name']) ?>')">編輯</a>
-                        <a href="#" class="btn-action btn-delete" onclick="confirmDelete(<?= $cat['id'] ?>, '<?= htmlspecialchars($cat['name']) ?>')">刪除</a>
+                        <a href="#" class="btn-action btn-edit" onclick="editCat(<?= $cat['id'] ?>, '<?= htmlspecialchars($cat['name']) ?>'); return false;">編輯</a>
+                        <a href="#" class="btn-action btn-delete" onclick="confirmDelete(<?= $cat['id'] ?>, '<?= htmlspecialchars($cat['name']) ?>'); return false;">刪除</a>
                     </td>
                 </tr>
                 <?php endforeach; ?>
@@ -300,12 +317,41 @@ try {
         overlay.style.display = 'none';
     }
 
-    // 編輯提示 (實務上可改為 Modal 表單)
+    // 編輯提示與資料提交
     function editCat(id, currentName) {
         const newName = prompt("請輸入新的看板名稱：", currentName);
-        if (newName && newName !== currentName) {
-            // 這裡可以用 AJAX 或跳轉處理
-            alert("編輯功能可依需求串接後端更新 API");
+        if (newName !== null) {
+            const trimmedName = newName.trim();
+            if (trimmedName === "") {
+                alert("看板名稱不能為空！");
+            } else if (trimmedName !== currentName) {
+                // 建立一個臨時表單，將資料提交給後端進行更新
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = 'admin_categories.php';
+
+                const actionInput = document.createElement('input');
+                actionInput.type = 'hidden';
+                actionInput.name = 'action';
+                actionInput.value = 'edit';
+
+                const idInput = document.createElement('input');
+                idInput.type = 'hidden';
+                idInput.name = 'id';
+                idInput.value = id;
+
+                const nameInput = document.createElement('input');
+                nameInput.type = 'hidden';
+                nameInput.name = 'name';
+                nameInput.value = trimmedName;
+
+                form.appendChild(actionInput);
+                form.appendChild(idInput);
+                form.appendChild(nameInput);
+
+                document.body.appendChild(form);
+                form.submit();
+            }
         }
     }
 </script>

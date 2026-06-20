@@ -228,6 +228,7 @@ AI犯錯的解決方法:
 
 3. 優化了好友動態的ui。
 
+4. 將admin_categoires.php的編輯看板功能弄好
 
 
 
